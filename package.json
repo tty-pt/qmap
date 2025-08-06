@@ -1,0 +1,21 @@
+{
+  "name": "@tty-pt/qmap",
+  "version": "0.0.1",
+  "description": "Simple in-memory C generic hashtables",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo no tests yet",
+    "postinstall": "make"
+  },
+  "keywords": [
+    "hashtable"
+  ],
+  "author": "quirinpa@gmail.com",
+  "license": "BSD-3-Clause",
+  "files": [
+    "*.c",
+    "qmap.pc",
+    "include",
+    "Makefile"
+  ]
+}

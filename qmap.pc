@@ -1,0 +1,10 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: qmaplib
+Description: Simple hashtable library
+Version: 0.0.1
+Libs: -L${libdir} -lxxhash
+Cflags: -I${includedir}/qmaplib
