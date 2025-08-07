@@ -3,10 +3,13 @@ pwd != pwd
 prefix := ${pwd} /usr/local
 CFLAGS := ${prefix:%=-I%/include} -g -O3 -Wall -Wextra -Wpedantic
 LDLIBS := -lxxhash
-LDFLAGS := -L/usr/local/lib ${LDLIBS}
+LDFLAGS := ${prefix:%=-L%/lib} ${LDLIBS}
 dirs := bin lib
 
-all: lib/libqmap.so
+all: test
+
+test: test.c lib/libqmap.so
+	${CC} -o $@ test.c ${CFLAGS} lib/libqmap.so
 
 lib/libqmap.so: libqmap.c include/qmap.h lib
 	${CC} -o $@ libqmap.c ${CFLAGS} -fPIC -shared ${LDFLAGS}

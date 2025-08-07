@@ -9,42 +9,40 @@ enum qmap_member {
 };
 
 enum qmap_flags {
-	QMAP_HASH = 1,
-	QMAP_PTR = 2,
-	QMAP_NO_ALLOC = 4,
-	QMAP_AINDEX = 8,
+	QMAP_DUP = 1,
+	QMAP_AINDEX = 2,
+	QMAP_PGET = 4,
+	QMAP_TWO_WAY = 8,
 };
 
-typedef unsigned qmap_hash_t(void *key, size_t key_len);
 typedef size_t qmap_measure_t(void *value);
+typedef int qmap_compare_t(void *a, void *b, size_t len);
+typedef int qmap_print_t(char *target, void *value);
 
-typedef struct {
-	size_t len;
-	qmap_measure_t *measure;
+typedef struct qmap_type {
+	size_t len; // length if fixed
+	qmap_measure_t *measure;   // for variable length
+	qmap_compare_t *compare;   // only used in test
+	qmap_print_t   *print;     // same
+	struct qmap_type *part[2]; // for composed types
 } qmap_type_t;
 
-// FIXME internal. How about I hide this?
-typedef struct {
-	unsigned *map, *omap;
-	char *vmap;
-	qmap_type_t *type[2];
-	unsigned m, n, mask, flags;
-	size_t value_len;
-	qmap_hash_t *hash;
-} qmap_t;
+typedef int qmap_assoc_t(void **data, void *key, void *value);
 
-static inline size_t qmap_len(qmap_t *qmap, void *value, enum qmap_member member) {
-	qmap_type_t *type = qmap->type[member];
-	return type->len ? type->len : type->measure(value);
-}
-
-qmap_t qmap_new(qmap_type_t *key_type, qmap_type_t *value_type,
+void qmap_init(void);
+unsigned qmap_open(qmap_type_t *key_type,
+		qmap_type_t *value_type,
 		unsigned mask, unsigned flags);
+void qmap_close(unsigned hd);
 
-void qmap_put(qmap_t *qmap, void *key, void *value);
-void qmap_del(qmap_t *qmap, void *key);
-int qmap_get(qmap_t *qmap, void *destiny, void *key);
+int qmap_get(unsigned hd, void *destiny, void *key);
+unsigned qmap_put(unsigned hd, void *key, void *value);
+void qmap_del(unsigned hd, void *key, void *value);
 
-int qmap_nth(qmap_t *qmap, void *destiny, unsigned n);
+unsigned qmap_iter(unsigned hd, void *key);
+int qmap_next(void *key, void *value, unsigned cur_id);
+void qmap_cdel(unsigned cur_id);
+
+void qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb);
 
 #endif
