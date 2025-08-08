@@ -18,12 +18,10 @@ typedef struct {
 	unsigned *map,  // id -> n
 		 *omap; // n -> id
 
-	// this is for values
-	char *vmap;     // id -> value
-
+	char *vmaps[2];
 	qmap_type_t *type[2];
 	unsigned m, mask, flags;
-	size_t value_len;
+	size_t lens[2];
 	qmap_hash_t *hash;
 	idm_t idm;
 
@@ -135,7 +133,7 @@ unsigned _qmap_open(qmap_type_t *key_type,
 	unsigned hd = idm_new(&idm);
 	qmap_t *qmap = &qmaps[hd];
 	unsigned len;
-	size_t keys_len, values_len;
+	size_t ids_len, keys_len, values_len;
 
 #if QMAP_DEBUG
 	fprintf(stderr, "_open %u %p %p %u %u\n",
@@ -143,23 +141,24 @@ unsigned _qmap_open(qmap_type_t *key_type,
 			(void *) value_type, mask, flags);
 #endif
 
-	if (value_type->len) {
-		qmap->value_len = value_type->len;
-	} else
-		qmap->value_len = sizeof(char *); // allow variable len
-
+	qmap->lens[QMAP_KEY] = key_type->len ? key_type->len : sizeof(char *);
+	qmap->lens[QMAP_VALUE] = value_type->len ? value_type->len : sizeof(char *);
+	
 	qmap->hash = qmap_hash;
 	if (key_type->len == sizeof(unsigned))
 		qmap->hash = qmap_nohash;
 
 	mask = mask ? mask : QMAP_DEFAULT_MASK;
 	len = ((unsigned) -1) & mask;
-	keys_len = len * sizeof(unsigned);
-	values_len = len * qmap->value_len;
 
-	qmap->map = malloc(keys_len);
-	qmap->omap = malloc(keys_len);
-	qmap->vmap = malloc(values_len);
+	ids_len = len * sizeof(unsigned);
+	keys_len = len * qmap->lens[QMAP_KEY];
+	values_len = len * qmap->lens[QMAP_VALUE];
+
+	qmap->map = malloc(ids_len);
+	qmap->omap = malloc(ids_len);
+	qmap->vmaps[QMAP_KEY] = malloc(keys_len);
+	qmap->vmaps[QMAP_VALUE] = malloc(values_len);
 	qmap->m = len;
 	qmap->type[QMAP_KEY] = key_type;
 	qmap->type[QMAP_VALUE] = value_type;
@@ -167,9 +166,10 @@ unsigned _qmap_open(qmap_type_t *key_type,
 	qmap->flags = flags;
 	qmap->idm = idm_init();
 
-	memset(qmap->map, 0, keys_len);
-	memset(qmap->omap, 0, keys_len);
-	memset(qmap->vmap, 0, values_len);
+	memset(qmap->map, 0, ids_len);
+	memset(qmap->omap, 0, ids_len);
+	memset(qmap->vmaps[QMAP_KEY], 0, keys_len);
+	memset(qmap->vmaps[QMAP_VALUE], 0, values_len);
 
 	return hd;
 }
@@ -226,8 +226,24 @@ static inline unsigned qmap_id(unsigned hd, void *key) {
 }
 
 static inline
-void *qmap_value(qmap_t *qmap, unsigned id) {
-	return qmap->vmap + id * qmap->value_len;
+void *qmap_value(qmap_t *qmap, enum qmap_member t, unsigned id) {
+	return qmap->vmaps[t] + id * qmap->lens[t];
+}
+
+static inline
+void ___qmap_put(unsigned hd, enum qmap_member t, void *value, unsigned id) {
+	qmap_t *qmap = &qmaps[hd];
+	void *real_value = value, *tmp = value;
+
+	if (!(qmap->type[t]->len)) {
+		size_t real_len = qmap_len(hd, value, t);
+		tmp = malloc(real_len);
+		memcpy(tmp, value, real_len);
+		real_value = &tmp;
+	}
+
+	value = qmap_value(qmap, t, id);
+	memcpy(value, real_value, qmap->lens[t]);
 }
 
 static inline
@@ -246,25 +262,26 @@ unsigned _qmap_put(unsigned hd, void *key, void *value) {
 		qmap->m *= 2; // TODO careful here - id can be big
 		qmap->map = realloc(qmap->map, qmap->m * sizeof(unsigned));
 		qmap->omap = realloc(qmap->omap, qmap->m * sizeof(unsigned));
-		qmap->vmap = realloc(qmap->vmap, qmap->m * qmap->value_len);
+		qmap->vmaps[QMAP_KEY] = realloc(qmap->vmaps[QMAP_KEY], qmap->m * qmap->lens[QMAP_KEY]);
+		qmap->vmaps[QMAP_VALUE] = realloc(qmap->vmaps[QMAP_VALUE], qmap->m * qmap->lens[QMAP_VALUE]);
 	}
 
-	void *real_value = value, *tmp = value;
-
-	if (!(qmap->type[QMAP_VALUE]->len)) {
-		size_t real_len = qmap_len(hd, value, QMAP_VALUE);
-		tmp = malloc(real_len);
-		memcpy(tmp, value, real_len);
-		real_value = &tmp;
-	}
-
-	value = qmap_value(qmap, id);
+	___qmap_put(hd, QMAP_KEY, key, id);
+	___qmap_put(hd, QMAP_VALUE, value, id);
 
 	qmap->omap[n] = id;
 	qmap->map[id] = n;
 
-	memcpy(value, real_value, qmap->value_len);
 	return id;
+}
+
+static inline
+void ___qmap_get(void *target, unsigned hd, enum qmap_member t, unsigned id) {
+	qmap_t *qmap = &qmaps[hd];
+	void *value = qmap_value(qmap, t, id);
+	if (!(qmap->type[t]->len))
+		value = * (char **) value;
+	memcpy(target, value, qmap_len(hd, value, t));
 }
 
 static inline
@@ -280,10 +297,7 @@ int _qmap_get(unsigned hd, void *destiny, void *key) {
 	if (n >= qmap->idm.last || qmap->omap[n] != id)
 		return 1;
 
-	void *value = qmap_value(qmap, id);
-	if (!(qmap->type[QMAP_VALUE]->len))
-		value = * (char **) value;
-	memcpy(destiny, value, qmap_len(hd, value, QMAP_VALUE));
+	___qmap_get(destiny, hd, QMAP_VALUE, id);
 
 	return 0;
 }
@@ -427,8 +441,6 @@ int qmap_next(void *key, void *value, unsigned cur_id)
 {
 	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
 	register qmap_t *qmap = &qmaps[cursor->hd];
-	void *inner_value;
-	size_t value_len;
 	unsigned n, id;
 cagain:
 	n = cursor->position;
@@ -443,12 +455,12 @@ cagain:
 	}
 
 	if (cursor->key) {
-		if (!(id == * (unsigned *) cursor->key
+		if (id == * (unsigned *) cursor->key
 				&& (qmap->flags & QMAP_DUP)
-				&& _qmap_next_dup(value, cur_id)))
-			goto end;
+				&& _qmap_next_dup(value, cur_id))
+			return 1;
 
-		return 1;
+		goto end;
 	}
 
 	if (qmap->flags & QMAP_DUP) {
@@ -460,16 +472,8 @@ cagain:
 		goto cagain;
 	}
 
-	inner_value = qmap_value(qmap, id);
-	memcpy(key, &id, sizeof(id));
-
-	if (!qmap->type[QMAP_VALUE]->len)
-		inner_value = * (void **) inner_value;
-
-	value_len = qmap_len(cursor->hd,
-			inner_value, QMAP_VALUE);
-
-	memcpy(value, inner_value, value_len);
+	___qmap_get(key, cursor->hd, QMAP_KEY, id);
+	___qmap_get(value, cursor->hd, QMAP_VALUE, id);
 	cursor->position++;
 	return 1;
 end:
@@ -490,7 +494,7 @@ void _qmap_del(unsigned hd, void *key) {
 		return; // not present
 
 	if (!(qmap->type[QMAP_VALUE]->len)) {
-		void *value = qmap->vmap + id * qmap->value_len;
+		void *value = qmap_value(qmap, QMAP_VALUE, id);
 		free(* (void **) value);
 	}
 
@@ -524,7 +528,7 @@ void qmap_cdel(unsigned cur_id)
 	id = qmap->omap[n];
 
 	if (!(qmap->type[QMAP_VALUE]->len)) {
-		void *value = qmap->vmap + id * qmap->value_len;
+		void *value = qmap_value(qmap, QMAP_VALUE, id);
 		free(* (void **) value);
 	}
 
