@@ -11,7 +11,7 @@ all: test
 test: test.c lib/libqmap.so
 	${CC} -o $@ test.c ${CFLAGS} lib/libqmap.so
 
-lib/libqmap.so: libqmap.c include/qmap.h lib
+lib/libqmap.so: libqmap.c include/qmap.h include/qidm.h lib
 	${CC} -o $@ libqmap.c ${CFLAGS} -fPIC -shared ${LDFLAGS}
 
 $(dirs):
@@ -23,6 +23,7 @@ install: lib/libqmap.so
 	install -m 644 qmap.pc $(DESTDIR)${PREFIX}/lib/pkgconfig
 	install -d ${DESTDIR}${PREFIX}/include
 	install -m 644 include/qmap.h $(DESTDIR)${PREFIX}/include
+	install -m 644 include/qidm.h $(DESTDIR)${PREFIX}/include
 
 clean:
 	rm lib/libqmap.so|| true

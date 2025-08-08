@@ -144,7 +144,7 @@ gen_del(unsigned hd, void *key, void *value) {
 }
 
 static inline
-void test_first() {
+void test_first(void) {
 	unsigned hd = gen_open(UTOS, 0);
 
 	unsigned keys[] = { 3, 5 };
@@ -158,7 +158,7 @@ void test_first() {
 }
 
 static inline
-void test_second() {
+void test_second(void) {
 	unsigned hd = gen_open(STOU, 0);
 	unsigned values[] = { 9, 7 };
 
@@ -169,7 +169,7 @@ void test_second() {
 }
 
 static inline
-void test_third() {
+void test_third(void) {
 	unsigned hd = gen_open(UTOU, 0);
 	unsigned keys[] = { 3, 9 };
 	unsigned values[] = { 5, 7 };
@@ -181,7 +181,7 @@ void test_third() {
 }
 
 static inline
-void test_fourth() {
+void test_fourth(void) {
 	unsigned hd = gen_open(UTOS, QMAP_TWO_WAY);
 	unsigned keys[] = { 3, 9 };
 
@@ -196,7 +196,7 @@ void test_fourth() {
 }
 
 static inline
-void test_fifth() {
+void test_fifth(void) {
 	unsigned hd = gen_open(STOU, QMAP_TWO_WAY);
 	unsigned values[] = { 3, 9 };
 
@@ -211,7 +211,7 @@ void test_fifth() {
 }
 
 static inline
-void test_sixth() {
+void test_sixth(void) {
 	unsigned hd = gen_open(STOS, QMAP_TWO_WAY);
 
 	gen_put(hd, "hello", "hellov");
@@ -220,6 +220,24 @@ void test_sixth() {
 	type_cache[hd + 1] = STOS;
 	gen_get(hd + 1, "hellov", "hello");
 	gen_get(hd + 1, "hiv", "hi");
+
+	qmap_close(hd);
+}
+
+
+static inline
+void test_seventh(void) {
+	unsigned hd = gen_open(STOS, QMAP_TWO_WAY), cur_id;
+	char key[MAX_LEN];
+	char value[MAX_LEN];
+
+	gen_put(hd, "hello", "olleh");
+	gen_put(hd, "hi", "ih");
+	gen_put(hd, "ola", "alo");
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(key, value, cur_id))
+		printf("ITER '%s' - '%s'\n", key, value);
 
 	qmap_close(hd);
 }
@@ -233,6 +251,7 @@ int main(void) {
 	test_fourth();
 	test_fifth();
 	test_sixth();
+	test_seventh();
 
 	return -errors;
 }

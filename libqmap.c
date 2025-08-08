@@ -1,4 +1,5 @@
 #include "./include/qmap.h"
+#include "./include/qidm.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,24 +10,6 @@
 #define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
 #define QMAP_SEED 13
 #define QMAP_DEFAULT_MASK 0x7FFF
-#define QMAP_MAX 1024
-#define QMAP_MAX_COMBINED_LEN (BUFSIZ * 2)
-#define INVALID ((unsigned) -1)
-
-
-struct ids_item {
-	unsigned value;
-	SLIST_ENTRY(ids_item) entry;
-};
-
-SLIST_HEAD(ids, ids_item);
-
-typedef struct ids ids_t;
-
-typedef struct {
-	ids_t free;
-	unsigned last;
-} idm_t;
 
 typedef unsigned qmap_hash_t(void *key, size_t key_len);
 
@@ -60,42 +43,13 @@ unsigned assoc_hd;
 
 static qmap_type_t type_unsigned = { .len = sizeof(unsigned), };
 
-static inline
-ids_t ids_init(void) {
-	struct ids list;
-	SLIST_INIT(&list);
-	return list;
-}
-
-static inline
-void ids_push(ids_t *list, unsigned id) {
-	struct ids_item *item = (struct ids_item *)
-		malloc(sizeof(struct ids_item));
-	item->value = id;
-	SLIST_INSERT_HEAD(list, item, entry);
-}
-
 #if 0
 static inline
 unsigned ids_peek(ids_t *list) {
 	struct ids_item *top = SLIST_FIRST(list);
-	return top ? top->value : INVALID;
+	return top ? top->value : QMAP_MISS;
 }
 #endif
-
-static inline
-unsigned ids_pop(ids_t *list) { \
-	struct ids_item *popped = SLIST_FIRST(list);
-	unsigned ret;
-
-	if (!popped)
-		return INVALID;
-
-	ret = popped->value;
-	SLIST_REMOVE_HEAD(list, entry);
-	free(popped);
-	return ret;
-}
 
 #if 0
 static inline
@@ -111,12 +65,6 @@ struct ids_item *ids_next(unsigned *id, struct ids_item *last) {
 
 #endif
 
-static inline
-void ids_drop(ids_t *list) {
-	while (!ids_pop(list));
-}
-
-static inline
 unsigned idm_new(idm_t *idm) {
 	unsigned ret = ids_pop(&idm->free);
 
@@ -126,7 +74,6 @@ unsigned idm_new(idm_t *idm) {
 	return ret;
 }
 
-static inline
 idm_t idm_init(void) {
 	idm_t idm;
 	idm.free = ids_init();
@@ -134,7 +81,7 @@ idm_t idm_init(void) {
 	return idm;
 }
 
-static inline int idm_del(idm_t *idm, unsigned id) {
+int idm_del(idm_t *idm, unsigned id) {
 	if (id + 1 == idm->last) {
 		idm->last--;
 		return 1;
@@ -166,7 +113,6 @@ size_t _qmap_len(qmap_type_t *type, void *value) {
 	}
 }
 
-static inline
 size_t qmap_len(unsigned hd, void *value, enum qmap_member member) {
 	qmap_t *qmap = &qmaps[hd];
 	qmap_type_t *type = qmap->type[member];
@@ -491,7 +437,7 @@ cagain:
 		goto end;
 
 	id = qmap->omap[n];
-	if (id == INVALID) {
+	if (id == QMAP_MISS) {
 		cursor->position++;
 		goto cagain;
 	}
@@ -549,8 +495,8 @@ void _qmap_del(unsigned hd, void *key) {
 	}
 
 	idm_del(&qmap->idm, n);
-	qmap->map[id] = INVALID;
-	qmap->omap[n] = INVALID;
+	qmap->map[id] = QMAP_MISS;
+	qmap->omap[n] = QMAP_MISS;
 }
 
 void qmap_del(unsigned hd, void *key, void *value)
@@ -583,12 +529,11 @@ void qmap_cdel(unsigned cur_id)
 	}
 
 	idm_del(&qmap->idm, n);
-	qmap->map[id] = INVALID;
-	qmap->omap[n] = INVALID;
+	qmap->map[id] = QMAP_MISS;
+	qmap->omap[n] = QMAP_MISS;
 }
 
-static inline void
-qmap_values_free(unsigned hd) {
+void qmap_drop(unsigned hd) {
 	unsigned cur_id = qmap_iter(hd, NULL);
 	char key[QMAP_MAX_COMBINED_LEN];
 	char value[QMAP_MAX_COMBINED_LEN];
@@ -600,11 +545,20 @@ qmap_values_free(unsigned hd) {
 void
 qmap_close(unsigned hd) {
 	qmap_t *qmap = &qmaps[hd];
-	qmap_values_free(hd);
+	qmap_drop(hd);
 	if ((qmap->flags & QMAP_TWO_WAY)
 			&& (qmap->flags & QMAP_DUP))
 		free(qmap->type[QMAP_KEY]);
 	ids_drop(&qmap->idm.free);
 	qmap->idm.last = 0;
 	idm_del(&idm, hd);
+}
+
+void qmap_print(char *target, unsigned hd,
+		unsigned type, void *thing)
+{
+	qmap_t *qmap = &qmaps[hd];
+	if (qmap->flags & QMAP_TWO_WAY)
+		hd += 1;
+	qmap->type[type]->print(target, thing);
 }

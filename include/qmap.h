@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+#define QMAP_MAX 1024
+#define QMAP_MAX_COMBINED_LEN (BUFSIZ * 2)
+#define QMAP_MISS ((unsigned) -1)
+
 enum qmap_member {
 	QMAP_KEY = 0,
 	QMAP_VALUE = 1,
@@ -38,11 +42,15 @@ void qmap_close(unsigned hd);
 int qmap_get(unsigned hd, void *destiny, void *key);
 unsigned qmap_put(unsigned hd, void *key, void *value);
 void qmap_del(unsigned hd, void *key, void *value);
+void qmap_drop(unsigned hd);
 
 unsigned qmap_iter(unsigned hd, void *key);
 int qmap_next(void *key, void *value, unsigned cur_id);
 void qmap_cdel(unsigned cur_id);
 
 void qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb);
+size_t qmap_len(unsigned hd, void *value, enum qmap_member member);
+void qmap_print(char *target, unsigned hd,
+		unsigned type, void *thing);
 
 #endif
