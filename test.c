@@ -130,7 +130,9 @@ gen_get(unsigned hd, void *key, void *expects) {
 
 static inline
 void gen_put(unsigned hd, void *key, void *value) {
-	qmap_put(hd, key, value);
+	unsigned akey = qmap_put(hd, key, value);
+	if (!key)
+		key = &akey;
 	gen_get(hd, key, value);
 }
 
@@ -170,12 +172,17 @@ void test_second(void) {
 
 static inline
 void test_third(void) {
-	unsigned hd = gen_open(UTOU, 0);
+	unsigned hd = gen_open(UTOU, 0), cur_id;
 	unsigned keys[] = { 3, 9 };
 	unsigned values[] = { 5, 7 };
+	unsigned key, value;
 
 	gen_put(hd, &keys[0], &values[0]);
 	gen_put(hd, &keys[1], &values[1]);
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, &value, cur_id))
+		printf("ITER '%u' - '%u'\n", key, value);
 
 	qmap_close(hd);
 }
@@ -242,6 +249,23 @@ void test_seventh(void) {
 	qmap_close(hd);
 }
 
+static inline
+void test_eighth(void) {
+	unsigned hd = gen_open(UTOS, QMAP_AINDEX), cur_id;
+	unsigned key;
+	char value[MAX_LEN];
+
+	gen_put(hd, NULL, "hello");
+	gen_put(hd, NULL, "hi");
+	gen_put(hd, NULL, "ola");
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	qmap_close(hd);
+}
+
 int main(void) {
 	qmap_init();
 
@@ -252,6 +276,7 @@ int main(void) {
 	test_fifth();
 	test_sixth();
 	test_seventh();
+	test_eighth();
 
 	return -errors;
 }

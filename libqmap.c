@@ -254,8 +254,10 @@ unsigned _qmap_put(unsigned hd, void *key, void *value) {
 
 	if (key)
 		id = qmap_id(hd, key);
-	else
+	else {
 		id = n;
+		key = &n;
+	}
 
 	if (qmap->m <= id) {
 		qmap->m = id;
@@ -365,7 +367,9 @@ qmap_put(unsigned hd, void *key, void *value)
 
 	}
 
-	ret =__qmap_put(hd, key, value);
+	ret = __qmap_put(hd, key, value);
+	if (!key)
+		key = &ret;
 proceed:
 
 	cur = qmap_iter(assoc_hd, &hd);
