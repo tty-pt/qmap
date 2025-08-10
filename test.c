@@ -209,6 +209,7 @@ void test_fifth(void) {
 
 	gen_put(hd, "hello", &values[0]);
 	gen_put(hd, "hi", &values[1]);
+	fprintf(stderr, "fifth two-way\n");
 
 	type_cache[hd + 1] = UTOS;
 	gen_get(hd + 1, &values[0], "hello");
@@ -246,6 +247,25 @@ void test_seventh(void) {
 	while (qmap_next(key, value, cur_id))
 		printf("ITER '%s' - '%s'\n", key, value);
 
+	fprintf(stderr, "keyed iter\n");
+	cur_id = qmap_iter(hd, "hello");
+	while (qmap_next(key, value, cur_id))
+		printf("ITER '%s' - '%s'\n", key, value);
+
+	gen_del(hd + 1, "alo", NULL);
+	gen_get(hd + 1, "olleh", "hello");
+	gen_get(hd + 1, "ih", "hi");
+
+	fprintf(stderr, "reverse iter\n");
+	cur_id = qmap_iter(hd + 1, NULL);
+	while (qmap_next(key, value, cur_id))
+		printf("ITER '%s' - '%s'\n", key, value);
+
+	fprintf(stderr, "reverse keyed iter\n");
+	cur_id = qmap_iter(hd + 1, "ih");
+	while (qmap_next(key, value, cur_id))
+		printf("ITER '%s' - '%s'\n", key, value);
+
 	qmap_close(hd);
 }
 
@@ -270,12 +290,19 @@ int main(void) {
 	qmap_init();
 
 	test_first();
+	fprintf(stderr, "second\n");
 	test_second();
+	fprintf(stderr, "third\n");
 	test_third();
+	fprintf(stderr, "fourth\n");
 	test_fourth();
+	fprintf(stderr, "fifth\n");
 	test_fifth();
+	fprintf(stderr, "sixth\n");
 	test_sixth();
+	fprintf(stderr, "seventh\n");
 	test_seventh();
+	fprintf(stderr, "eighth\n");
 	test_eighth();
 
 	return -errors;

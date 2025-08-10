@@ -36,7 +36,7 @@ unsigned ids_pop(ids_t *list) {
 	unsigned ret;
 
 	if (!popped)
-		return QMAP_MISS;
+		return -1;
 
 	ret = popped->value;
 	SLIST_REMOVE_HEAD(list, entry);
