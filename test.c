@@ -271,7 +271,7 @@ void test_seventh(void) {
 
 static inline
 void test_eighth(void) {
-	unsigned hd = gen_open(UTOS, QMAP_AINDEX), cur_id;
+	unsigned hd = gen_open(UTOS, QMAP_AINDEX | QMAP_TWO_WAY), cur_id;
 	unsigned key;
 	char value[MAX_LEN];
 
@@ -282,6 +282,11 @@ void test_eighth(void) {
 	cur_id = qmap_iter(hd, NULL);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
+
+	fprintf(stderr, "reversed\n");
+	cur_id = qmap_iter(hd + 1, NULL);
+	while (qmap_next(value, &key, cur_id))
+		printf("ITER '%s' - '%u'\n", value, key);
 
 	qmap_close(hd);
 }
