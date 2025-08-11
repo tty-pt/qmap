@@ -17,6 +17,7 @@
 #define QMAP_DEFAULT_MASK 0x7FFF
 
 #define DEBUG_LVL 0
+/* #define FEAT_DUP_PRIMARY */
 
 #define DEBUG(lvl, fmt, ...) \
 	if (DEBUG_LVL > lvl) \
@@ -207,6 +208,7 @@ qmap_open(qmap_type_t *key_type, qmap_type_t *value_type, unsigned mask, unsigne
 	if (!(flags & QMAP_TWO_WAY))
 		return phd;
 
+#ifdef FEAT_DUP_PRIMARY
 	// we need a special type to account
 	// for both key and value in this case
 	// in case we want n <-> n
@@ -219,6 +221,7 @@ qmap_open(qmap_type_t *key_type, qmap_type_t *value_type, unsigned mask, unsigne
 		key_type->measure = NULL;
 		prim_dup = 1;
 	}
+#endif
 
 	flags &= ~(QMAP_TWO_WAY | QMAP_AINDEX);
 	flags |= QMAP_DUP;
@@ -392,7 +395,10 @@ qmap_put(unsigned hd, void *key, void *value)
 	ret = __qmap_put(hd, key, value);
 	if (!key)
 		key = &ret;
+
+#ifdef FEAT_DUP_PRIMARY
 proceed:
+#endif
 
 	cur = qmap_iter(assoc_hd, &hd);
 	while (qmap_lnext(cur)) {
@@ -428,10 +434,8 @@ int qmap_pget(unsigned hd, void *target, void *key) {
 	pqmap = &qmaps[qmap->phd];
 	pid = pqmap->omap[n];
 
-#if 1
-	if (pid == QMAP_MISS)
+	if (pqmap->map[pid] != n)
 		return 1;
-#endif
 
 	value = qmap_rval(qmap->phd, QMAP_KEY, pid);
 	len = qmap_len(qmap->phd, value, QMAP_KEY);
@@ -448,13 +452,7 @@ void qmap_fin(unsigned cur_id) {
 
 int qmap_get(unsigned hd, void *value, void *key)
 {
-	qmap_t *qmap = &qmaps[hd];
-	unsigned cur_id;
-
-	if (qmap->flags & QMAP_PGET)
-		return qmap_pget(hd, value, key);
-
-	cur_id = qmap_iter(hd, key);
+	unsigned cur_id = qmap_iter(hd, key);;
 
 	if (!qmap_lnext(cur_id))
 		return 1;
@@ -691,10 +689,12 @@ qmap_close(unsigned hd) {
 
 	if (qmap->flags & QMAP_TWO_WAY) {
 		qmap_close(hd + 1);
+#ifdef FEAT_DUP_PRIMARY
 		if (qmap->flags & QMAP_DUP) {
 			qmap_close(hd + 2);
 			free(qmap->type[QMAP_KEY]);
 		}
+#endif
 	}
 
 	qmap_drop(hd);
