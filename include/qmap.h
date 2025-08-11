@@ -45,8 +45,21 @@ void qmap_del(unsigned hd, void *key, void *value);
 void qmap_drop(unsigned hd);
 
 unsigned qmap_iter(unsigned hd, void *key);
-int qmap_next(void *key, void *value, unsigned cur_id);
+int qmap_lnext(unsigned cur_id);
+
+void qmap_fin(unsigned cur_id);
+void qmap_cget(void *target, unsigned cur_id, enum qmap_member t);
 void qmap_cdel(unsigned cur_id);
+
+static inline int
+qmap_next(void *key, void *value, unsigned cur_id) {
+	if (!qmap_lnext(cur_id))
+		return 0;
+
+	qmap_cget(key, cur_id, QMAP_KEY);
+	qmap_cget(value, cur_id, QMAP_VALUE);
+	return 1;
+}
 
 void qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb);
 size_t qmap_len(unsigned hd, void *value, enum qmap_member member);
