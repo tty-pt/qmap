@@ -1,4 +1,4 @@
-#include "./include/qmap.h"
+#include "./../include/qmap.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -8,49 +8,8 @@ char *bad = "❌";
 
 unsigned errors = 0;
 
-size_t string_measure(const void * const value) {
-	return strlen(value) + 1;
-}
-
-int string_compare(const void * const a,
-		const void * const b,
-		size_t _len __attribute__((unused)))
-{
-	return strcmp(a, b);
-}
-
-int
-string_print(char * const target, const void * const value)
-{
-	return sprintf(target, "%s", (char *) value);
-}
-
-int
-other_compare(const void * const a,
-		const void * const b, size_t len)
-{
-	return memcmp(a, b, len);
-}
-
-int
-unsigned_print(char * const target, const void * const value)
-{
-	return sprintf(target, "%u", * (unsigned *) value);
-}
-
-qmap_type_t type_string = {
-	.measure = string_measure,
-	.compare = string_compare,
-	.print   = string_print,
-}, type_unsigned = {
-	.len     = sizeof(unsigned),
-	.compare = other_compare,
-	.print   = unsigned_print,
-};
-
 typedef struct {
-	qmap_type_t *key;
-	qmap_type_t *value;
+	char *key, *value;
 } dbtype_t;
 
 enum dbtype {
@@ -61,19 +20,10 @@ enum dbtype {
 };
 
 dbtype_t dbtypes[] = {
-	{
-		&type_unsigned,
-		&type_string,
-	}, {
-		&type_string,
-		&type_unsigned,
-	}, {
-		&type_unsigned,
-		&type_unsigned,
-	}, {
-		&type_string,
-		&type_string,
-	}
+	{ "u", "s" },
+	{ "s", "u" },
+	{ "u", "u" },
+	{ "s", "s" },
 };
 
 unsigned type_cache[32];
@@ -101,8 +51,6 @@ typedef struct {
 static int
 _gen_get(unsigned hd, void *key, void *expects, int reverse)
 {
-	enum dbtype t = type_cache[hd];
-	dbtype_t type = dbtypes[t];
 	char ret[MAX_LEN];
 	char buf[BUFSIZ];
 	char *mark, *rgood = good, *rbad = bad;
@@ -113,9 +61,9 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse)
 		rbad = good;
 	}
 
-	type.key->print(buf, key);
+	qmap_print(buf, hd, QMAP_KEY, key);
 	printf("gen_get_test(%u, %s, ", hd, buf);
-	type.value->print(buf, expects);
+	qmap_print(buf, hd, QMAP_VALUE, expects);
 	printf("%s) = ", buf);
 
 	if (qmap_get(hd, ret, key)) {
@@ -123,12 +71,11 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse)
 		return !reverse;
 	}
 
-	mark = type.value->compare(ret, expects,
-			type.value->len)
+	mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
 		? rbad : rgood;
 
 	memset(buf, 0, sizeof(buf));
-	type.value->print(buf, ret);
+	qmap_print(buf, hd, QMAP_VALUE, ret);
 
 	printf("%s %s\n", buf, mark);
 	return reverse;

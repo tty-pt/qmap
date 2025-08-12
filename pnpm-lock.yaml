@@ -1,0 +1,34 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      '@tty-pt/mk':
+        specifier: ^0.1.9
+        version: 0.1.9
+      '@tty-pt/qsys':
+        specifier: ^0.0.9
+        version: 0.0.9(@tty-pt/mk@0.1.9)
+
+packages:
+
+  '@tty-pt/mk@0.1.9':
+    resolution: {integrity: sha512-lBJCF9qKPdG8uEnEx3CCqNEYgO7YvmkkQhmrQc996gUH0lNIDBd2ecpAI2eXZVQii+ZqjSxcN6jjhjxwio/F5Q==}
+
+  '@tty-pt/qsys@0.0.9':
+    resolution: {integrity: sha512-aXQCoH0uEFNvxGEeU6bbsms5CUQbHxlaHhUV5/Do0aaC+lbrQF0jaO8IguLOSmy/z1Et+i5WlInGmkUVTtgsCw==}
+    peerDependencies:
+      '@tty-pt/mk': ^0.1.9
+
+snapshots:
+
+  '@tty-pt/mk@0.1.9': {}
+
+  '@tty-pt/qsys@0.0.9(@tty-pt/mk@0.1.9)':
+    dependencies:
+      '@tty-pt/mk': 0.1.9
