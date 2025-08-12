@@ -19,9 +19,13 @@ enum qmap_flags {
 	QMAP_TWO_WAY = 8,
 };
 
-typedef size_t qmap_measure_t(void *value);
-typedef int qmap_compare_t(void *a, void *b, size_t len);
-typedef int qmap_print_t(char *target, void *value);
+typedef size_t qmap_measure_t(const void * const value);
+
+typedef int qmap_compare_t(const void * const a,
+		const void * const b, size_t len);
+
+typedef int qmap_print_t(char * const target,
+		const void * const value);
 
 typedef struct qmap_type {
 	size_t len; // length if fixed
@@ -33,31 +37,36 @@ typedef struct qmap_type {
 
 /* Association callbacks follow this format */
 typedef int qmap_assoc_t(
-		void **data, void *key, void *value);
+		const void ** const data,
+		const void * const key,
+		const void * const value);
 
 /* Initialize the system */
 void qmap_init(void);
 
 /* Open a new qmap */
-unsigned qmap_open(qmap_type_t *key_type,
-		qmap_type_t *value_type,
+unsigned qmap_open(const qmap_type_t * const key_type,
+		const qmap_type_t * const value_type,
 		unsigned mask, unsigned flags);
 
 /* Close a qmap */
 void qmap_close(unsigned hd);
 
 /* Get a value from a key */
-int qmap_get(unsigned hd, void *destiny, void *key);
+int qmap_get(unsigned hd, void * const destiny,
+		const void * const key);
 
 /* Put a value and a key, or maybe just a value, if
  * you have AINDEX on. (use NULL as the key for that)
  */
-unsigned qmap_put(unsigned hd, void *key, void *value);
+unsigned qmap_put(unsigned hd, const void * const key,
+		const void * const value);
 
 /* Delete a key-value pair. Or perhaps all values for a key
  * (use NULL as the value for that)
  */
-void qmap_del(unsigned hd, void *key, void *value);
+void qmap_del(unsigned hd, const void * const key,
+		const void * const value);
 
 /* drop an entire qmap's contents */
 void qmap_drop(unsigned hd);
@@ -66,7 +75,7 @@ void qmap_drop(unsigned hd);
  * pointer to some key you want to search.
  * Returns a cursor handle.
  */
-unsigned qmap_iter(unsigned hd, void *key);
+unsigned qmap_iter(unsigned hd, const void * const key);
 
 /* Move the cursor to the next item. It returns one if there
  * is something there, or zero if there isn't. Use it in a
@@ -78,7 +87,7 @@ int qmap_lnext(unsigned cur_id);
 void qmap_fin(unsigned cur_id);
 
 /* Get the item under the cursor. */
-void qmap_cget(void *target,
+void qmap_cget(void * const target,
 		unsigned cur_id, enum qmap_mbr t);
 
 /* Delete the item under the cursor. */
@@ -88,7 +97,9 @@ void qmap_cdel(unsigned cur_id);
  * values to wherever you like.
  */
 static inline int
-qmap_next(void *key, void *value, unsigned cur_id) {
+qmap_next(void * const key, void * const value,
+		unsigned cur_id)
+{
 	if (!qmap_lnext(cur_id))
 		return 0;
 
@@ -104,13 +115,17 @@ qmap_next(void *key, void *value, unsigned cur_id) {
 void qmap_assoc(unsigned hd,
 		unsigned link, qmap_assoc_t cb);
 
+/* Get a primary key from a secondary qmap */
+int qmap_pget(unsigned hd, void *target, void *key);
+
 /* Measure the length of something based on its type
  * association.
  */
-size_t qmap_len(unsigned hd, void *value, enum qmap_mbr t);
+size_t qmap_len(unsigned hd,
+		const void * const value, enum qmap_mbr t);
 
 /* Print a thing based on its type association. */
-void qmap_print(char *target, unsigned hd,
-		unsigned type, void *thing);
+void qmap_print(char * const target, unsigned hd,
+		unsigned type, const void * const thing);
 
 #endif

@@ -8,23 +8,33 @@ char *bad = "❌";
 
 unsigned errors = 0;
 
-size_t string_measure(void *value) {
+size_t string_measure(const void * const value) {
 	return strlen(value) + 1;
 }
 
-int string_compare(void *a, void *b, size_t _len __attribute__((unused))) {
+int string_compare(const void * const a,
+		const void * const b,
+		size_t _len __attribute__((unused)))
+{
 	return strcmp(a, b);
 }
 
-int string_print(char *target, void *value) {
+int
+string_print(char * const target, const void * const value)
+{
 	return sprintf(target, "%s", (char *) value);
 }
 
-int other_compare(void *a, void *b, size_t len) {
+int
+other_compare(const void * const a,
+		const void * const b, size_t len)
+{
 	return memcmp(a, b, len);
 }
 
-int unsigned_print(char *target, void *value) {
+int
+unsigned_print(char * const target, const void * const value)
+{
 	return sprintf(target, "%u", * (unsigned *) value);
 }
 
@@ -89,7 +99,8 @@ typedef struct {
 #define MAX_LEN (BUFSIZ * 2)
 
 static int
-_gen_get(unsigned hd, void *key, void *expects, int reverse) {
+_gen_get(unsigned hd, void *key, void *expects, int reverse)
+{
 	enum dbtype t = type_cache[hd];
 	dbtype_t type = dbtypes[t];
 	char ret[MAX_LEN];
@@ -112,8 +123,10 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse) {
 		return !reverse;
 	}
 
-	int cmp = type.value->compare(ret, expects, type.value->len);
-	mark = cmp ? rbad : rgood;
+	mark = type.value->compare(ret, expects,
+			type.value->len)
+		? rbad : rgood;
+
 	memset(buf, 0, sizeof(buf));
 	type.value->print(buf, ret);
 
@@ -122,14 +135,16 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse) {
 }
 
 static inline int
-gen_get(unsigned hd, void *key, void *expects) {
+gen_get(unsigned hd, void *key, void *expects)
+{
 	int ret = _gen_get(hd, key, expects, 0);
 	errors += ret;
 	return ret;
 }
 
-static inline
-void gen_put(unsigned hd, void *key, void *value) {
+static inline void
+gen_put(unsigned hd, void *key, void *value)
+{
 	unsigned akey = qmap_put(hd, key, value);
 	if (!key)
 		key = &akey;
@@ -137,7 +152,8 @@ void gen_put(unsigned hd, void *key, void *value) {
 }
 
 static inline int
-gen_del(unsigned hd, void *key, void *value) {
+gen_del(unsigned hd, void *key, void *value)
+{
 	int ret;
 	qmap_del(hd, key, value);
 	ret = _gen_get(hd, key, value, 1);
@@ -145,8 +161,9 @@ gen_del(unsigned hd, void *key, void *value) {
 	return ret;
 }
 
-static inline
-void test_first(void) {
+static inline void
+test_first(void)
+{
 	unsigned hd = gen_open(UTOS, 0);
 
 	unsigned keys[] = { 3, 5 };
@@ -159,8 +176,9 @@ void test_first(void) {
 	qmap_close(hd);
 }
 
-static inline
-void test_second(void) {
+static inline void
+test_second(void)
+{
 	unsigned hd = gen_open(STOU, 0);
 	unsigned values[] = { 9, 7 };
 
@@ -170,8 +188,9 @@ void test_second(void) {
 	qmap_close(hd);
 }
 
-static inline
-void test_third(void) {
+static inline void
+test_third(void)
+{
 	unsigned hd = gen_open(UTOU, 0), cur_id;
 	unsigned keys[] = { 3, 9 };
 	unsigned values[] = { 5, 7 };
@@ -187,8 +206,9 @@ void test_third(void) {
 	qmap_close(hd);
 }
 
-static inline
-void test_fourth(void) {
+static inline void
+test_fourth(void)
+{
 	unsigned hd = gen_open(UTOS, QMAP_TWO_WAY);
 	unsigned keys[] = { 3, 9 };
 
@@ -202,8 +222,9 @@ void test_fourth(void) {
 	qmap_close(hd);
 }
 
-static inline
-void test_fifth(void) {
+static inline void
+test_fifth(void)
+{
 	unsigned hd = gen_open(STOU, QMAP_TWO_WAY);
 	unsigned values[] = { 3, 9 };
 
@@ -218,8 +239,9 @@ void test_fifth(void) {
 	qmap_close(hd);
 }
 
-static inline
-void test_sixth(void) {
+static inline void
+test_sixth(void)
+{
 	unsigned hd = gen_open(STOS, QMAP_TWO_WAY);
 
 	gen_put(hd, "hello", "hellov");
@@ -233,8 +255,9 @@ void test_sixth(void) {
 }
 
 
-static inline
-void test_seventh(void) {
+static inline void
+test_seventh(void)
+{
 	unsigned hd = gen_open(STOS, QMAP_TWO_WAY), cur_id;
 	char key[MAX_LEN];
 	char value[MAX_LEN];
@@ -270,9 +293,11 @@ void test_seventh(void) {
 }
 
 static inline
-void test_eighth(void) {
-	unsigned hd = gen_open(UTOS, QMAP_AINDEX | QMAP_TWO_WAY), cur_id;
-	unsigned key;
+void test_eighth(void)
+{
+	unsigned cur_id, key;
+	unsigned hd = gen_open(UTOS,
+			QMAP_AINDEX | QMAP_TWO_WAY);
 	char value[MAX_LEN];
 
 	gen_put(hd, NULL, "hello");
