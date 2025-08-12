@@ -4,14 +4,15 @@
  * I'm adding some comments to make it easier to understand,
  * but whatever's user API is documented in the header file.
  */
-#include "./include/qmap.h"
-#include "./include/qidm.h"
+#include "./../include/qmap.h"
+#include "./../include/qidm.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
 #include <xxhash.h>
+#include <qsys.h>
 
 /* MACROS, STRUCTS, ENUMS AND GLOBALS {{{ */
 
@@ -22,18 +23,8 @@
 /* #define FEAT_DUP_PRIMARY */
 /* #define FEAT_REHASH */
 
-#define DEBUG(lvl, fmt, ...) \
-	if (DEBUG_LVL > lvl) \
-	fprintf(stderr, fmt, __VA_ARGS__)
-
-#define CBUG(cond, ...) \
-	if (cond) { \
-		fprintf(stderr, "%s: ", __func__); \
-		fprintf(stderr, __VA_ARGS__); \
-		abort(); \
-	}
-
-#define UNUSED __attribute__((unused))
+#define DEBUG(lvl, ...) \
+	if (DEBUG_LVL > lvl) WARN(__VA_ARGS__)
 
 typedef unsigned qmap_hash_t(
 		const void * const key, size_t key_len);
@@ -45,6 +36,7 @@ typedef struct {
 
 	char *vmaps[2];
 	const qmap_type_t *type[2];
+	const char * type_str[2];
 	unsigned m, mask, flags;
 	size_t lens[2];
 	qmap_hash_t *hash;
@@ -63,10 +55,42 @@ typedef struct {
 qmap_t qmaps[QMAP_MAX];
 qmap_cur_t qmap_cursors[QMAP_MAX];
 idm_t idm, cursor_idm;
-unsigned assoc_hd;
+unsigned assoc_hd, types_hd;
 
-static qmap_type_t type_unsigned = {
+int
+u_print(char * const target, const void * const value)
+{
+	return sprintf(target, "%u", * (unsigned *) value);
+}
+
+int
+s_print(char * const target, const void * const value)
+{
+	return sprintf(target, "%s", (char *) value);
+}
+
+size_t
+s_measure(const void * const value)
+{
+	return value ? strlen(value) + 1 : 0;
+}
+
+int s_compare(const void * const a,
+		const void * const b,
+		size_t _len UNUSED)
+{
+	return strcmp(a, b);
+}
+
+static qmap_type_t type_string = {
+	.print = s_print,
+	.measure = s_measure,
+	.compare = s_compare,
+}, type_unsigned = {
+	.print = u_print,
 	.len = sizeof(unsigned),
+}, type_ptr = {
+	.len = sizeof(void *),
 };
 
 /* }}} */
@@ -106,6 +130,15 @@ qmap_twin_assoc(const void ** const skey,
 	*skey = key;
 	return 0;
 }
+
+/* OTHERS */
+int
+other_compare(const void * const a,
+		const void * const b, size_t len)
+{
+	return memcmp(a, b, len);
+}
+
 
 /* }}} */
 
@@ -187,7 +220,7 @@ qmap_cval(qmap_cur_t *cursor, enum qmap_mbr t)
  * provides.
  */
 static inline int
-qmap_cmp(unsigned hd, enum qmap_mbr t, unsigned id,
+_qmap_cmp(unsigned hd, enum qmap_mbr t, unsigned id,
 		const void * const cmp)
 {
 	void *value = qmap_rval(hd, t, id);
@@ -208,7 +241,7 @@ qmap_ccmp(unsigned cur_id, enum qmap_mbr t,
 	register qmap_cur_t *cursor
 		= &qmap_cursors[qmap_low_cur(cur_id)];
 	
-	return qmap_cmp(cursor->hd, t,
+	return _qmap_cmp(cursor->hd, t,
 			cursor->id, cmp);
 }
 
@@ -242,14 +275,8 @@ qmap_len(unsigned hd, const void * const value,
 /* OPEN / INITIALIZATION {{{ */
 
 void /* API */
-qmap_init(void)
-{
-	idm = idm_init();
-	cursor_idm = idm_init();
-	assoc_hd = qmap_open(
-			&type_unsigned,
-			&type_unsigned,
-			0, QMAP_DUP);
+qmap_regc(char *key, qmap_type_t *type) {
+	qmap_put(types_hd, key, &type);
 }
 
 /* This is used by qmap_open to open databases. */
@@ -313,8 +340,9 @@ _qmap_open(const qmap_type_t * const key_type,
 	return hd;
 }
 
-unsigned /* API */
-qmap_open(const qmap_type_t *key_type,
+/* Open a qmap by specifying types directly */
+static unsigned
+qmap_topen(const qmap_type_t *key_type,
 		const qmap_type_t *value_type,
 		unsigned mask, unsigned flags)
 {
@@ -365,6 +393,43 @@ qmap_open(const qmap_type_t *key_type,
 #endif
 
 	return phd;
+}
+
+unsigned /* API */
+qmap_open(const char * const key_tid,
+		const char * const value_tid,
+		unsigned mask, unsigned flags) {
+	qmap_type_t *key_type, *value_type;
+	unsigned hd;
+
+	CBUG(qmap_get(types_hd, &key_type, key_tid),
+			"key type was not registered\n");
+
+	CBUG(qmap_get(types_hd, &value_type, value_tid),
+			"key type was not registered\n");
+
+	hd = qmap_topen(key_type, value_type, mask, flags);
+
+	qmaps[hd].type_str[QMAP_KEY] = key_tid;
+	qmaps[hd].type_str[QMAP_VALUE] = value_tid;
+	return hd;
+}
+
+void /* API */
+qmap_init(void)
+{
+	idm = idm_init();
+	cursor_idm = idm_init();
+
+	types_hd = qmap_topen(&type_string, &type_ptr,
+			0, QMAP_TWO_WAY);
+
+	assoc_hd = qmap_topen(&type_unsigned,
+			&type_unsigned, 0, QMAP_DUP);
+
+	qmap_regc("s", &type_string);
+	qmap_regc("u", &type_unsigned);
+	qmap_regc("p", &type_ptr);
 }
 
 /* }}} */
@@ -483,7 +548,7 @@ _qmap_put(unsigned hd, const void * const key,
 
 	if (n >= qmap->idm.last || qmap->omap[n] != id)
 	{
-		in_hd = qmap_open(
+		in_hd = qmap_topen(
 				qmap->type[QMAP_KEY],
 				qmap->type[QMAP_VALUE],
 				0, qmap->flags & QMAP_PGET);
@@ -821,7 +886,7 @@ cagain:
 		goto cagain;
 	}
 
-	if (cursor->key && qmap_cmp(cursor->hd,
+	if (cursor->key && _qmap_cmp(cursor->hd,
 				QMAP_KEY, id,
 				cursor->key))
 		goto end;
@@ -894,6 +959,32 @@ qmap_print(char * const target, unsigned hd,
 	if (qmap->flags & QMAP_TWO_WAY)
 		hd += 1;
 	qmap->type[type]->print(target, thing);
+}
+
+int /* API */
+qmap_cmp(unsigned hd, enum qmap_mbr t,
+		const void * const a,
+		const void * const b)
+{
+	qmap_t *qmap = &qmaps[hd];
+	qmap_compare_t *cmp = qmap->type[t]->compare;
+
+	if (!cmp)
+		cmp = other_compare;
+
+	return cmp(a, b, qmap->type[t]->len);
+}
+
+const char * /* API */
+qmap_type(unsigned hd, enum qmap_mbr t)
+{
+	return qmaps[hd].type_str[t];
+}
+
+unsigned /* API */
+qmap_flags(unsigned hd)
+{
+	return qmaps[hd].flags;
 }
 
 /* }}} */

@@ -2,6 +2,7 @@
 #define QMAP_H
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #define QMAP_MAX 1024
 #define QMAP_MAX_COMBINED_LEN (BUFSIZ * 2)
@@ -44,9 +45,8 @@ typedef int qmap_assoc_t(
 /* Initialize the system */
 void qmap_init(void);
 
-/* Open a new qmap */
-unsigned qmap_open(const qmap_type_t * const key_type,
-		const qmap_type_t * const value_type,
+unsigned qmap_open(const char * const key_tid,
+		const char * const value_tid,
 		unsigned mask, unsigned flags);
 
 /* Close a qmap */
@@ -127,5 +127,31 @@ size_t qmap_len(unsigned hd,
 /* Print a thing based on its type association. */
 void qmap_print(char * const target, unsigned hd,
 		unsigned type, const void * const thing);
+
+/* Register a type by type pointer */
+void qmap_regc(char *key, qmap_type_t *type);
+
+/* Register a type by string (fixed length) */
+static inline void
+qmap_reg(char *key, size_t len)
+{
+	qmap_type_t *type = (qmap_type_t *)
+		malloc(sizeof(qmap_type_t));
+	type->measure = NULL;
+	type->len = len;
+	type->print = NULL;
+	qmap_regc(key, type);
+}
+
+/* Compare two values */
+int qmap_cmp(unsigned hd, enum qmap_mbr t,
+		const void * const a,
+		const void * const b);
+
+/* Get the type string of a member */
+const char *qmap_type(unsigned hd, enum qmap_mbr t);
+
+/* Get the flags of a qmap */
+unsigned qmap_flags(unsigned hd);
 
 #endif

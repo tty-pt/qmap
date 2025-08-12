@@ -1,10 +1,10 @@
 {
   "name": "@tty-pt/qmap",
-  "version": "0.0.4",
+  "version": "0.0.9",
   "description": "Simple in-memory C generic hashtables",
   "main": "index.js",
   "scripts": {
-    "test": "./test",
+    "test": "./bin/test",
     "postinstall": "make"
   },
   "keywords": [
@@ -13,9 +13,18 @@
   "author": "quirinpa@gmail.com",
   "license": "BSD-3-Clause",
   "files": [
-    "*.c",
+    "src/*.c",
     "qmap.pc",
     "include",
     "Makefile"
-  ]
+  ],
+  "dependencies": {
+    "@tty-pt/mk": "^0.1.9"
+  },
+  "peerDependencies": {
+    "@tty-pt/qsys": "^0.0.8"
+  },
+  "devDependencies": {
+    "@tty-pt/qsys": "^0.0.8"
+  }
 }
