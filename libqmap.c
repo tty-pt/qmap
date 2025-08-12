@@ -1,8 +1,3 @@
-/* TODO
- * - DELETE should use a cursor, because we might want to delete a specific key / value pair
- * - GET should also use cursors, because we might need to get from a secondary database.
- * - PUT maybe should do it as well, to cover recursion correctly. 
- */
 #include "./include/qmap.h"
 #include "./include/qidm.h"
 #include <assert.h>
@@ -12,16 +7,21 @@
 #include <sys/queue.h>
 #include <xxhash.h>
 
+/* MACROS, STRUCTS, ENUMS AND GLOBALS {{{ */
+
 #define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
 #define QMAP_SEED 13
 #define QMAP_DEFAULT_MASK 0x7FFF
 
 #define DEBUG_LVL 0
 /* #define FEAT_DUP_PRIMARY */
+/* #define FEAT_REALLOC */
 
 #define DEBUG(lvl, fmt, ...) \
 	if (DEBUG_LVL > lvl) \
 	fprintf(stderr, fmt, __VA_ARGS__)
+
+#define UNUSED __attribute__((unused))
 
 typedef unsigned qmap_hash_t(void *key, size_t key_len);
 
@@ -52,58 +52,146 @@ qmap_cur_t qmap_cursors[QMAP_MAX];
 idm_t idm, cursor_idm;
 unsigned assoc_hd;
 
-static qmap_type_t type_unsigned = { .len = sizeof(unsigned), };
+static qmap_type_t type_unsigned = {
+	.len = sizeof(unsigned),
+};
 
-#if 0
+/* }}} */
+
+/* BUILT-INS {{{ */
+
+/* HASH FUNCTIONS */
+
+static unsigned qmap_hash(void *key, size_t key_len) {
+	return XXH32(key, key_len, QMAP_SEED);
+}
+
+static unsigned qmap_nohash(void *key, size_t key_len UNUSED) {
+	return * (unsigned *) key;
+}
+
+/* ASSOCIATION CALLBACKS */
+
+int
+qmap_assoc_rhd(void **skey, void *key UNUSED, void *value) {
+	*skey = value;
+	return 0;
+}
+
+int
+qmap_twin_assoc(void **skey, void *key, void *value UNUSED) {
+	*skey = key;
+	return 0;
+}
+
+/* }}} */
+
+/* HELPER FUNCTIONS {{{ */
+
+/* this gets the lowest cursor counting from cur_id,
+ * meaning, iteration starts on a high-level cursor on
+ * some qmap, but then it trickles down to whatever might
+ * be on sub-qmaps. This returns the lowest level one.
+ * It's useful for methods that operate on the cursor itself,
+ * like cget and cdel.
+ * */
+static inline unsigned
+qmap_low_cur(unsigned cur_id) {
+	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
+
+	if (!cursor->sub_cur)
+		return cur_id;
+	else
+		return qmap_low_cur(cursor->sub_cur);
+}
+
+/* In some cases we want to calculate the id based on
+ * the qmap's hash function and the key, and the mask.
+ * Other times it's not useful to do that.
+ * This is for when it is.
+ * */
+static inline unsigned qmap_id(unsigned hd, void *key) {
+	qmap_t *qmap = &qmaps[hd];
+	return qmap->hash(key, qmap_len(hd, key, QMAP_KEY)) & qmap->mask;
+}
+
+/* This obtains something which might be a direct value.
+ * But it might also be a pointer, in case of unknown length
+ * values, or a qmap handle (unsigned), if the qmap is has
+ * the DUP flag, for example. 
+ */
 static inline
-unsigned ids_peek(ids_t *list) {
-	struct ids_item *top = SLIST_FIRST(list);
-	return top ? top->value : QMAP_MISS;
+void *qmap_val(qmap_t *qmap, enum qmap_member t, unsigned id) {
+	return qmap->vmaps[t] + id * qmap->lens[t];
 }
-#endif
 
-#if 0
+/* This, on the other hand, will return the pointer to the
+ * value itself, even if it has variable length. However
+ * for DUP qmaps it will still return the pointer to the
+ * handle.
+ */
 static inline
-struct ids_item *ids_iter(ids_t *list) {
-	return SLIST_FIRST(list);
+void *qmap_rval(unsigned hd, enum qmap_member t, unsigned id) {
+	qmap_t *qmap = &qmaps[hd];
+	void *value = qmap_val(qmap, t, id);
+
+	if (((qmap->flags & QMAP_DUP) && t == QMAP_VALUE)
+			|| qmap->type[t]->len)
+		return value;
+
+	return * (void **) value;
 }
 
-static inline
-struct ids_item *ids_next(unsigned *id, struct ids_item *last) {
-	*id = last->value;
-	return SLIST_NEXT(last, entry);
+/* This is the exact same as qmap_rval except that it's
+ * meant to be used with pointers.
+ */
+static inline void *
+qmap_cval(qmap_cur_t *cursor, enum qmap_member t) {
+	register qmap_t *qmap = &qmaps[cursor->hd];
+	unsigned n = cursor->position - 1,
+		 id = qmap->omap[n];
+
+	return qmap_rval(cursor->hd, t, id);
 }
 
-#endif
-
-unsigned idm_new(idm_t *idm) {
-	unsigned ret = ids_pop(&idm->free);
-
-	if (ret == (unsigned) -1)
-		return idm->last++;
-
-	return ret;
+/* This compares the thing being pointed to by a cursor
+ * to the pointer the user provides.
+ */
+static inline int
+qmap_ccmp(unsigned cur_id, enum qmap_member t, void *cmp)
+{
+	register qmap_cur_t *cursor
+		= &qmap_cursors[qmap_low_cur(cur_id)];
+	void *value = qmap_cval(cursor, t);
+	size_t len = qmap_len(cursor->hd, value, t);
+	return memcmp(value, cmp, len);
 }
 
-idm_t idm_init(void) {
-	idm_t idm;
-	idm.free = ids_init();
-	idm.last = 0;
-	return idm;
-}
+/* This will get you the true length of a value */
+size_t qmap_len(unsigned hd, void *value, enum qmap_member member) {
+	qmap_t *qmap = &qmaps[hd];
+	qmap_type_t *type = qmap->type[member];
 
-int idm_del(idm_t *idm, unsigned id) {
-	if (idm->last <= id)
-		return 1;
-	else if (id + 1 == idm->last) {
-		idm->last--;
-		return 1;
-	} else {
-		ids_push(&idm->free, id);
-		return 0;
+	if (type->len)
+		return type->len;
+#ifndef FEAT_DUP_PRIMARY
+	return type->measure(value);
+#else
+	else if (type->measure)
+		return type->measure(value);
+	else {
+		size_t key_len = _qmap_len(type->part[0], value);
+		size_t value_len = _qmap_len(type->part[1], (char *) value + key_len);
+		return key_len + value_len;
 	}
+#endif
 }
 
+/* }}} */
+
+/* OPEN / INITIALIZATION {{{ */
+
+/* You must call this to initialize the system */
 void qmap_init(void) {
 	idm = idm_init();
 	cursor_idm = idm_init();
@@ -113,34 +201,9 @@ void qmap_init(void) {
 			0, QMAP_DUP);
 }
 
-static inline
-size_t _qmap_len(qmap_type_t *type, void *value) {
-	if (type->len)
-		return type->len;
-	else if (type->measure)
-		return type->measure(value);
-	else {
-		size_t key_len = _qmap_len(type->part[0], value);
-		return key_len
-			+ _qmap_len(type->part[1], (char *) value + key_len);
-	}
-}
-
-size_t qmap_len(unsigned hd, void *value, enum qmap_member member) {
-	qmap_t *qmap = &qmaps[hd];
-	qmap_type_t *type = qmap->type[member];
-	return _qmap_len(type, value);
-}
-
-unsigned qmap_hash(void *key, size_t key_len) {
-	return XXH32(key, key_len, QMAP_SEED);
-}
-
-unsigned qmap_nohash(void *key, size_t key_len __attribute__((unused))) {
-	return * (unsigned *) key;
-}
-
-unsigned _qmap_open(qmap_type_t *key_type,
+/* This is used by qmap_open to open databases. */
+static unsigned
+_qmap_open(qmap_type_t *key_type,
 		qmap_type_t *value_type,
 		unsigned mask,
 		unsigned flags)
@@ -191,12 +254,7 @@ unsigned _qmap_open(qmap_type_t *key_type,
 	return hd;
 }
 
-int
-qmap_assoc_rhd(void **skey, void *key __attribute__((unused)), void *value) {
-	*skey = value;
-	return 0;
-}
-
+/* This opens databases */
 unsigned
 qmap_open(qmap_type_t *key_type, qmap_type_t *value_type, unsigned mask, unsigned flags)
 {
@@ -239,31 +297,14 @@ qmap_open(qmap_type_t *key_type, qmap_type_t *value_type, unsigned mask, unsigne
 	return phd;
 }
 
-static inline unsigned qmap_id(unsigned hd, void *key) {
-	qmap_t *qmap = &qmaps[hd];
-	return qmap->hash(key, qmap_len(hd, key, QMAP_KEY)) & qmap->mask;
-}
+/* }}} */
 
-static inline
-void *qmap_val(qmap_t *qmap, enum qmap_member t, unsigned id) {
-	return qmap->vmaps[t] + id * qmap->lens[t];
-}
+/* PUT {{{ */
 
-static inline
-void *qmap_rval(unsigned hd, enum qmap_member t, unsigned id) {
-	qmap_t *qmap = &qmaps[hd];
-	void *value = qmap_val(qmap, t, id);
-
-	if (!((qmap->flags & QMAP_DUP) && t == QMAP_VALUE)
-			&& !(qmap->type[t]->len)) {
-		value = * (char **) value;
-	}
-
-	return value;
-}
-
-static inline
-void ___qmap_put(unsigned hd, enum qmap_member t, void *value, unsigned id) {
+/* This is a very low-level construct to put values in their place */
+static inline void
+qmap_mPUT(unsigned hd, enum qmap_member t, void *value, unsigned id)
+{
 	qmap_t *qmap = &qmaps[hd];
 	void *real_value = value, *tmp = value;
 	size_t len = qmap->lens[t];
@@ -279,8 +320,11 @@ void ___qmap_put(unsigned hd, enum qmap_member t, void *value, unsigned id) {
 	memcpy(qmap_val(qmap, t, id), real_value, len);
 }
 
+/* This is similar except that it already puts value and key,
+ * and gets an 'n' and an 'id' to insert
+ */
 static inline
-unsigned _qmap_put(unsigned hd, void *key, void *value) {
+unsigned qmap_PUT(unsigned hd, void *key, void *value) {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n = idm_new(&qmap->idm);
 	unsigned id;
@@ -292,6 +336,7 @@ unsigned _qmap_put(unsigned hd, void *key, void *value) {
 		key = &n;
 	}
 
+#ifdef FEAT_REALLOC
 	if (qmap->m <= id) {
 		qmap->m = id;
 		qmap->m *= 2; // TODO careful here - id can be big
@@ -300,9 +345,10 @@ unsigned _qmap_put(unsigned hd, void *key, void *value) {
 		qmap->vmaps[QMAP_KEY] = realloc(qmap->vmaps[QMAP_KEY], qmap->m * qmap->lens[QMAP_KEY]);
 		qmap->vmaps[QMAP_VALUE] = realloc(qmap->vmaps[QMAP_VALUE], qmap->m * qmap->lens[QMAP_VALUE]);
 	}
+#endif
 
-	___qmap_put(hd, QMAP_KEY, key, id);
-	___qmap_put(hd, QMAP_VALUE, value, id);
+	qmap_mPUT(hd, QMAP_KEY, key, id);
+	qmap_mPUT(hd, QMAP_VALUE, value, id);
 
 	qmap->omap[n] = id;
 	qmap->map[id] = n;
@@ -311,13 +357,16 @@ unsigned _qmap_put(unsigned hd, void *key, void *value) {
 	return id;
 }
 
-unsigned
-__qmap_put(unsigned hd, void *key, void *value) {
+/* this is a highter-level put but for internal use only.
+ * It's designed to know how to put in DUP databases.
+ */
+static unsigned
+_qmap_put(unsigned hd, void *key, void *value) {
 	qmap_t *qmap = &qmaps[hd], *iqmap;
 	unsigned in_hd, id, n;
 
 	if (!(qmap->flags & QMAP_DUP))
-		return _qmap_put(hd, key, value);
+		return qmap_PUT(hd, key, value);
 
 	id = qmap_id(hd, key);
 	n = qmap->map[id];
@@ -337,34 +386,17 @@ __qmap_put(unsigned hd, void *key, void *value) {
 			iqmap->phd = qmap->phd;
 		}
 
-		_qmap_put(hd, key, &in_hd);
+		qmap_PUT(hd, key, &in_hd);
 	} else
 		in_hd = * (unsigned *)
 			qmap_rval(hd, QMAP_VALUE, id);
 
-	return _qmap_put(in_hd, key, value);
+	return qmap_PUT(in_hd, key, value);
 }
 
-int
-qmap_twin_assoc(void **skey, void *key, void *value __attribute__((unused))) {
-	*skey = key;
-	return 0;
-}
-
-void
-qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
-{
-	qmap_t *qmap = &qmaps[hd];
-
-	if (!cb)
-		cb = qmap_twin_assoc;
-
-	__qmap_put(assoc_hd, &link, &hd);
-
-	qmap->assoc = cb;
-	qmap->phd = link;
-}
-
+/* this is the user's API. It tries to have everything
+ * into consideration.
+ */
 unsigned
 qmap_put(unsigned hd, void *key, void *value)
 {
@@ -385,14 +417,14 @@ qmap_put(unsigned hd, void *key, void *value)
 			char buf[key_len + value_len];
 			memcpy(buf, key, key_len);
 			memcpy(buf + key_len, value, value_len);
-			ret = __qmap_put(hd, buf, value);
+			ret = _qmap_put(hd, buf, value);
 			goto proceed;
 		}
 
 	}
 #endif
 
-	ret = __qmap_put(hd, key, value);
+	ret = _qmap_put(hd, key, value);
 	if (!key)
 		key = &ret;
 
@@ -409,12 +441,17 @@ proceed:
 		aqmap = &qmaps[linked_hd];
 		aqmap->assoc(&skey, key, value);
 
-		__qmap_put(linked_hd, skey, value);
+		_qmap_put(linked_hd, skey, value);
 	}
 
 	return ret;
 }
 
+/* }}} */
+
+/* GET {{{ */
+
+/* Use this to get a primary key from a secondary qmap */
 static inline
 int qmap_pget(unsigned hd, void *target, void *key) {
 	qmap_t *qmap = &qmaps[hd], *pqmap;
@@ -443,13 +480,6 @@ int qmap_pget(unsigned hd, void *target, void *key) {
 	return 0;
 }
 
-void qmap_fin(unsigned cur_id) {
-	qmap_cur_t *cursor = &qmap_cursors[cur_id];
-	if (cursor->sub_cur)
-		qmap_fin(cursor->sub_cur);
-	idm_del(&cursor_idm, cur_id);
-}
-
 int qmap_get(unsigned hd, void *value, void *key)
 {
 	unsigned cur_id = qmap_iter(hd, key);;
@@ -462,98 +492,43 @@ int qmap_get(unsigned hd, void *value, void *key)
 	return 0;
 }
 
-unsigned qmap_iter(unsigned hd, void *key) {
-	qmap_t *qmap = &qmaps[hd];
-	unsigned cur_id = idm_new(&cursor_idm);
-	qmap_cur_t *cursor = &qmap_cursors[cur_id];
-	unsigned id;
-
-	if (key) {
-		id = qmap_id(hd, key);
-		cursor->position = id > qmap->m
-			? qmap->m
-			: qmap->map[id];
-	} else
-		cursor->position = 0;
-
-	cursor->sub_cur = 0;
-	cursor->hd = hd;
-	cursor->key = key;
-	return cur_id;
-}
-
 static inline
-int _qmap_next_dup(unsigned cur_id, unsigned id)
+void *qmap_csget(qmap_cur_t *cursor, enum qmap_member t)
 {
-	qmap_cur_t *cursor = &qmap_cursors[cur_id];
-	unsigned in_hd = * (unsigned *)
-		qmap_rval(cursor->hd, QMAP_VALUE, id);
+	qmap_t *qmap = &qmaps[cursor->hd];
 
-	DEBUG(4, "next_dup %u\n", in_hd);
+	if ((qmap->flags & QMAP_PGET) && t == QMAP_VALUE)
+	{
+		void *key = qmap_csget(cursor, QMAP_KEY);
+		unsigned id = qmap_id(cursor->hd, key), n, pid;
+		qmap_t *pqmap, *tqmap;
 
-	if (!cursor->sub_cur)
-		cursor->sub_cur = qmap_iter(in_hd, cursor->key);
+		tqmap = &qmaps[cursor->hd];
+		n = qmaps[tqmap->tophd].map[id];
 
-	return qmap_lnext(cursor->sub_cur);
+		pqmap = &qmaps[qmap->phd];
+		pid = pqmap->omap[n];
+
+		return qmap_rval(qmap->phd, QMAP_KEY, pid);
+	} else 
+		return qmap_cval(cursor, t);
 }
 
-int qmap_lnext(unsigned cur_id)
+void qmap_cget(void *target, unsigned cur_id, enum qmap_member t)
 {
-	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
-	register qmap_t *qmap = &qmaps[cursor->hd];
-	unsigned n, id;
-	char *key;
-	size_t key_len;
-cagain:
-	n = cursor->position;
+	register qmap_cur_t *cursor
+		= &qmap_cursors[qmap_low_cur(cur_id)];
+	void *value;
+	size_t len;
 
-	if (n >= qmap->idm.last)
-		goto end;
-
-	id = qmap->omap[n];
-	if (id == QMAP_MISS) {
-		cursor->position++;
-		goto cagain;
-	}
-
-	if (qmap->flags & QMAP_DUP) {
-		if (_qmap_next_dup(cur_id, id))
-			return 1;
-
-		cursor->position++;
-		cursor->sub_cur = 0;
-		goto cagain;
-	}
-
-	key = qmap_rval(cursor->hd, QMAP_KEY, id);
-	key_len = qmap_len(cursor->hd, key, QMAP_KEY);
-
-	if (cursor->key && memcmp(key, cursor->key, key_len))
-		goto end;
-
-	cursor->position++;
-	return 1;
-end:
-	idm_del(&cursor_idm, cur_id);
-	return 0;
+	value = qmap_csget(cursor, t);
+	len = qmap_len(cursor->hd, value, t);
+	memcpy(target, value, len);
 }
 
-void qmap_drop(unsigned hd) {
-	unsigned cur_id = qmap_iter(hd, NULL);
+/* }}} */
 
-	while (qmap_lnext(cur_id))
-		qmap_cdel(cur_id);
-}
-
-static inline unsigned
-qmap_low_cur(unsigned cur_id) {
-	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
-
-	if (!cursor->sub_cur)
-		return cur_id;
-	else
-		return qmap_low_cur(cursor->sub_cur);
-}
+/* DELETE {{{ */
 
 void qmap_cdel(unsigned cur_id)
 {
@@ -579,67 +554,6 @@ void qmap_cdel(unsigned cur_id)
 	idm_del(&qmap->idm, n);
 	qmap->map[id] = QMAP_MISS;
 	qmap->omap[n] = QMAP_MISS;
-}
-
-static inline void *
-qmap_cval(qmap_cur_t *cursor, enum qmap_member t) {
-	register qmap_t *qmap = &qmaps[cursor->hd];
-	unsigned n = cursor->position - 1,
-		 id = qmap->omap[n];
-	void *value = qmap_val(qmap, t, id);
-
-	if (!(qmap->type[t]->len))
-		value = * (void **) value;
-
-	return value;
-}
-
-static inline int
-qmap_ccmp(unsigned cur_id, enum qmap_member t, void *cmp)
-{
-	register qmap_cur_t *cursor
-		= &qmap_cursors[qmap_low_cur(cur_id)];
-	void *value = qmap_cval(cursor, t);
-	size_t len = qmap_len(cursor->hd, value, t);
-	return memcmp(value, cmp, len);
-}
-
-static inline
-unsigned qmap_n(unsigned hd, unsigned id) {
-	qmap_t *qmap = &qmaps[hd];
-	return qmaps[qmap->tophd].map[id];
-}
-
-static inline
-void *qmap_csget(qmap_cur_t *cursor, enum qmap_member t)
-{
-	qmap_t *qmap = &qmaps[cursor->hd];
-
-	if ((qmap->flags & QMAP_PGET) && t == QMAP_VALUE)
-	{
-		void *key = qmap_csget(cursor, QMAP_KEY);
-		unsigned id = qmap_id(cursor->hd, key), n, pid;
-		qmap_t *pqmap;
-
-		n = qmap_n(cursor->hd, id);
-		pqmap = &qmaps[qmap->phd];
-		pid = pqmap->omap[n];
-
-		return qmap_rval(qmap->phd, QMAP_KEY, pid);
-	} else 
-		return qmap_cval(cursor, t);
-}
-
-void qmap_cget(void *target, unsigned cur_id, enum qmap_member t)
-{
-	register qmap_cur_t *cursor
-		= &qmap_cursors[qmap_low_cur(cur_id)];
-	void *value;
-	size_t len;
-
-	value = qmap_csget(cursor, t);
-	len = qmap_len(cursor->hd, value, t);
-	memcpy(target, value, len);
 }
 
 static inline // should always happen for secondaries
@@ -683,6 +597,95 @@ void qmap_del(unsigned hd, void *key, void *value)
 	}
 }
 
+/* }}} */
+
+/* ITERATION {{{ */
+void qmap_fin(unsigned cur_id) {
+	qmap_cur_t *cursor = &qmap_cursors[cur_id];
+	if (cursor->sub_cur)
+		qmap_fin(cursor->sub_cur);
+	idm_del(&cursor_idm, cur_id);
+}
+
+unsigned qmap_iter(unsigned hd, void *key) {
+	qmap_t *qmap = &qmaps[hd];
+	unsigned cur_id = idm_new(&cursor_idm);
+	qmap_cur_t *cursor = &qmap_cursors[cur_id];
+	unsigned id;
+
+	if (key) {
+		id = qmap_id(hd, key);
+		cursor->position = id > qmap->m
+			? qmap->m
+			: qmap->map[id];
+	} else
+		cursor->position = 0;
+
+	cursor->sub_cur = 0;
+	cursor->hd = hd;
+	cursor->key = key;
+	return cur_id;
+}
+
+int qmap_lnext(unsigned cur_id)
+{
+	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
+	register qmap_t *qmap = &qmaps[cursor->hd];
+	unsigned n, id;
+	char *key;
+	size_t key_len;
+cagain:
+	n = cursor->position;
+
+	if (n >= qmap->idm.last)
+		goto end;
+
+	id = qmap->omap[n];
+	if (id == QMAP_MISS) {
+		cursor->position++;
+		goto cagain;
+	}
+
+	if (qmap->flags & QMAP_DUP) {
+		unsigned in_hd = * (unsigned *)
+			qmap_rval(cursor->hd, QMAP_VALUE, id);
+
+		DEBUG(4, "next_dup %u\n", in_hd);
+
+		if (!cursor->sub_cur)
+			cursor->sub_cur = qmap_iter(in_hd, cursor->key);
+
+		if (qmap_lnext(cursor->sub_cur))
+			return 1;
+
+		cursor->position++;
+		cursor->sub_cur = 0;
+		goto cagain;
+	}
+
+	key = qmap_rval(cursor->hd, QMAP_KEY, id);
+	key_len = qmap_len(cursor->hd, key, QMAP_KEY);
+
+	if (cursor->key && memcmp(key, cursor->key, key_len))
+		goto end;
+
+	cursor->position++;
+	return 1;
+end:
+	idm_del(&cursor_idm, cur_id);
+	return 0;
+}
+
+/* }}} */
+
+/* DROP + CLOSE + OTHERS {{{ */
+void qmap_drop(unsigned hd) {
+	unsigned cur_id = qmap_iter(hd, NULL);
+
+	while (qmap_lnext(cur_id))
+		qmap_cdel(cur_id);
+}
+
 void
 qmap_close(unsigned hd) {
 	qmap_t *qmap = &qmaps[hd];
@@ -708,6 +711,20 @@ qmap_close(unsigned hd) {
 	idm_del(&idm, hd);
 }
 
+void
+qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
+{
+	qmap_t *qmap = &qmaps[hd];
+
+	if (!cb)
+		cb = qmap_twin_assoc;
+
+	_qmap_put(assoc_hd, &link, &hd);
+
+	qmap->assoc = cb;
+	qmap->phd = link;
+}
+
 void qmap_print(char *target, unsigned hd,
 		unsigned type, void *thing)
 {
@@ -716,3 +733,5 @@ void qmap_print(char *target, unsigned hd,
 		hd += 1;
 	qmap->type[type]->print(target, thing);
 }
+
+/* }}} */
