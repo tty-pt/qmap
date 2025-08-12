@@ -7,7 +7,7 @@
 #define QMAP_MAX_COMBINED_LEN (BUFSIZ * 2)
 #define QMAP_MISS ((unsigned) -1)
 
-enum qmap_member {
+enum qmap_mbr {
 	QMAP_KEY = 0,
 	QMAP_VALUE = 1,
 };
@@ -31,66 +31,61 @@ typedef struct qmap_type {
 	struct qmap_type *part[2]; // for composed types
 } qmap_type_t;
 
-/* association callbacks should have this format */
+/* Association callbacks follow this format */
 typedef int qmap_assoc_t(
 		void **data, void *key, void *value);
 
-/* initialize the system */
+/* Initialize the system */
 void qmap_init(void);
 
-/* initialize a new qmap */
+/* Open a new qmap */
 unsigned qmap_open(qmap_type_t *key_type,
 		qmap_type_t *value_type,
 		unsigned mask, unsigned flags);
 
-/* get rid of a qmap */
+/* Close a qmap */
 void qmap_close(unsigned hd);
 
-/* get a value from a key */
+/* Get a value from a key */
 int qmap_get(unsigned hd, void *destiny, void *key);
 
-/* put a value and a key, or maybe just a value, if
+/* Put a value and a key, or maybe just a value, if
  * you have AINDEX on. (use NULL as the key for that)
  */
 unsigned qmap_put(unsigned hd, void *key, void *value);
 
-/* delete a key-value pair. Or perhaps all values for
- * a key (use NULL as the value for that)
+/* Delete a key-value pair. Or perhaps all values for a key
+ * (use NULL as the value for that)
  */
 void qmap_del(unsigned hd, void *key, void *value);
 
 /* drop an entire qmap's contents */
 void qmap_drop(unsigned hd);
 
-/* start iteration over a qmap. Key might be NULL
- * or a pointer to some key you want to search.
+/* Start iterating over a qmap. Key might be NULL or a
+ * pointer to some key you want to search.
  * Returns a cursor handle.
  */
 unsigned qmap_iter(unsigned hd, void *key);
 
-/* This moves the cursor, it returns one if there
- * is something there, or zero if there isn't. It's
- * good for while loops and the like.
+/* Move the cursor to the next item. It returns one if there
+ * is something there, or zero if there isn't. Use it in a
+ * while loop, for example.
  */
 int qmap_lnext(unsigned cur_id);
 
-/* This notes that you've finished iteration early.
- * In case you want to break out of an iteration loop.
- * It's not require but it accounts for better clean-up.
- */
+/* When finishing iteration early, use this to clean up. */
 void qmap_fin(unsigned cur_id);
 
-/* This will return the item under the cursor to you. */
+/* Get the item under the cursor. */
 void qmap_cget(void *target,
-		unsigned cur_id, enum qmap_member t);
+		unsigned cur_id, enum qmap_mbr t);
 
-/* This will delete the item under the cursor. */
+/* Delete the item under the cursor. */
 void qmap_cdel(unsigned cur_id);
 
-/* This is like qmap_lnext except that it takes care
- * of copying the values to wherever you like. A bit
- * overkill in some situations. That's why I broke
- * lnext out of it.
+/* Like qmap_lnext except that it takes care of copying the
+ * values to wherever you like.
  */
 static inline int
 qmap_next(void *key, void *value, unsigned cur_id) {
@@ -102,22 +97,19 @@ qmap_next(void *key, void *value, unsigned cur_id) {
 	return 1;
 }
 
-/* This associates a qmap (hd) with a primary
- * qmap (link), using "cb" to generate secondary keys.
- * Effectively, it makes hd a secondary database.
+/* Associate a qmap (hd) with a primary qmap (link), using
+ * "cb" to generate secondary keys. Effectively, it makes
+ * hd a secondary database.
  */
 void qmap_assoc(unsigned hd,
 		unsigned link, qmap_assoc_t cb);
 
-/* This is just for measuring the length of a
- * certain element. It's useful for qdb, maybe
- * not for much else.
+/* Measure the length of something based on its type
+ * association.
  */
-size_t qmap_len(unsigned hd, void *value, enum qmap_member member);
+size_t qmap_len(unsigned hd, void *value, enum qmap_mbr t);
 
-/* Likewise, you shouldn't often need this. I think.
- * It prints a certain thing.
- */
+/* Print a thing based on its type association. */
 void qmap_print(char *target, unsigned hd,
 		unsigned type, void *thing);
 
