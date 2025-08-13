@@ -102,4 +102,43 @@ unsigned idm_new(idm_t *idm) {
 	return ret;
 }
 
+#if 1
+static inline
+unsigned idm_push(idm_t *idm, unsigned n) {
+	unsigned i;
+
+	if (idm->last > n) {
+		struct ids_item *item;
+
+		SLIST_FOREACH(item, &idm->free, entry) {
+			SLIST_REMOVE(&idm->free, item,
+					ids_item, entry);
+		}
+
+		return IDM_MISS;
+	}
+	
+	for (i = idm->last; i < n; i++)
+		ids_push(&idm->free, i);
+
+	idm->last = n + 1;
+	return n;
+}
+#endif
+
+#if 0
+#include <stdio.h>
+static inline void
+idm_debug(idm_t *idm) {
+	struct ids_item *item;
+	unsigned i;
+
+	fprintf(stderr, "last %u free", idm->last);
+	SLIST_FOREACH(item, &idm->free, entry)
+		fprintf(stderr, " %u\n", item->value);
+
+	fprintf(stderr, "\n");
+}
+#endif
+
 #endif
