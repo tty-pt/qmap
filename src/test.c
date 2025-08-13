@@ -73,8 +73,11 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse)
 		return !reverse;
 	}
 
-	mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
-		? rbad : rgood;
+	if (expects || !(qmap_flags(hd) & QMAP_DUP))
+		mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
+			? rbad : rgood;
+	else
+		mark = rbad;
 
 	memset(buf, 0, sizeof(buf));
 	qmap_print(buf, hd, QMAP_VALUE, ret);
@@ -283,6 +286,16 @@ void test_nineth(void)
 
 	WARN("Keyed iter\n");
 	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	gen_del(hd, &keys[0], NULL);
+	WARN("After del keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+	WARN("After del unkeyed\n");
+	cur_id = qmap_iter(hd, NULL);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 

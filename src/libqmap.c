@@ -797,14 +797,16 @@ qmap_del(unsigned hd,
 	}
 
 	cur = qmap_iter(hd, key);
-	while (qmap_lnext(cur)) {
-		if (value && qmap_ccmp(cur, QMAP_VALUE,
+
+	if (value) while (qmap_lnext(cur)) {
+		if (qmap_ccmp(cur, QMAP_VALUE,
 					value))
 			continue;
 		qmap_cdel(cur);
 		qmap_fin(cur);
 		return;
-	}
+	} else while (qmap_lnext(cur))
+		qmap_cdel(cur);
 }
 
 /* }}} */
