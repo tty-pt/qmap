@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <qsys.h>
+
 char *good = "✅";
 char *bad = "❌";
 
@@ -263,6 +265,30 @@ void test_eighth(void)
 	qmap_close(hd);
 }
 
+static inline
+void test_nineth(void)
+{
+	unsigned cur_id, key;
+	unsigned hd = gen_open(UTOS, QMAP_DUP);
+	unsigned keys[] = { 3, 3, 2 };
+	char value[MAX_LEN];
+
+	gen_put(hd, &keys[0], "hello");
+	qmap_put(hd, &keys[1], "hi");
+	gen_put(hd, &keys[2], "ola");
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	WARN("Keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	qmap_close(hd);
+}
+
 int main(void) {
 	qmap_init();
 
@@ -281,6 +307,8 @@ int main(void) {
 	test_seventh();
 	fprintf(stderr, "eighth\n");
 	test_eighth();
+	fprintf(stderr, "nineth\n");
+	test_nineth();
 
 	return -errors;
 }

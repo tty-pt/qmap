@@ -19,7 +19,7 @@
 #define QMAP_SEED 13
 #define QMAP_DEFAULT_MASK 0x7FFF
 
-#define DEBUG_LVL 0
+#define DEBUG_LVL 1
 /* #define FEAT_DUP_PRIMARY */
 /* #define FEAT_REHASH */
 
@@ -507,7 +507,7 @@ qmap_PUT(unsigned hd, const void * const key,
 	unsigned n = idm_new(&qmap->idm);
 	unsigned id;
 
-	if (key)
+	if (key && !(qmap->flags & QMAP_AINDEX))
 		id = qmap_id(hd, key);
 	else
 		id = n;
@@ -551,7 +551,7 @@ _qmap_put(unsigned hd, const void * const key,
 		in_hd = qmap_topen(
 				qmap->type[QMAP_KEY],
 				qmap->type[QMAP_VALUE],
-				0, qmap->flags & QMAP_PGET);
+				0, QMAP_AINDEX | (qmap->flags & QMAP_PGET));
 
 		iqmap = &qmaps[in_hd];
 		iqmap->tophd = hd;
@@ -849,6 +849,7 @@ qmap_iter(unsigned hd, const void * const key)
 int /* API */
 qmap_lnext(unsigned cur_id)
 {
+	unsigned low_id = qmap_low_cur(cur_id);
 	register qmap_cur_t *cursor
 		= &qmap_cursors[cur_id];
 	register qmap_t *qmap = &qmaps[cursor->hd];
@@ -865,21 +866,25 @@ cagain:
 		goto cagain;
 	}
 
+	DEBUG(3, "NEXT! high %u low %u n %u id %u\n",
+			cur_id, low_id, n, id);
 	cursor->id = id;
 
 	if (qmap->flags & QMAP_DUP) {
-		unsigned in_hd = * (unsigned *)
-			qmap_rval(cursor->hd,
-					QMAP_VALUE, id);
+		if (!cursor->sub_cur) {
+			unsigned in_hd = * (unsigned *)
+				qmap_rval(cursor->hd,
+						QMAP_VALUE, id);
 
-		DEBUG(4, "next_dup %u\n", in_hd);
-
-		if (!cursor->sub_cur)
 			cursor->sub_cur = qmap_iter(in_hd,
-					cursor->key);
+					NULL);
+		}
 
 		if (qmap_lnext(cursor->sub_cur))
 			return 1;
+
+		if (cursor->key)
+			goto end;
 
 		cursor->position++;
 		cursor->sub_cur = 0;
