@@ -43,7 +43,7 @@ typedef struct {
 	idm_t idm;
 
 	unsigned phd;
-	unsigned tophd;
+	unsigned tophd, topid;
 	qmap_assoc_t *assoc;
 } qmap_t;
 
@@ -170,8 +170,12 @@ static inline unsigned
 qmap_id(unsigned hd, const void * const key)
 {
 	qmap_t *qmap = &qmaps[hd];
-	size_t len = qmap_len(hd, key, QMAP_KEY);
-	return qmap->hash(key, len) & qmap->mask;
+	if (qmap->topid)
+		return qmap->topid;
+	else {
+		size_t len = qmap_len(hd, key, QMAP_KEY);
+		return qmap->hash(key, len) & qmap->mask;
+	}
 }
 
 /* This obtains something which might be a direct value. But
@@ -504,13 +508,23 @@ qmap_PUT(unsigned hd, const void * const key,
 		const void * const value)
 {
 	qmap_t *qmap = &qmaps[hd];
-	unsigned n = idm_new(&qmap->idm);
+	unsigned n;
 	unsigned id;
+	const void *rkey = key;
 
-	if (key && !(qmap->flags & QMAP_AINDEX))
+	if (key) {
 		id = qmap_id(hd, key);
-	else
+		if (qmap->flags & QMAP_AINDEX) {
+			n = id;
+			if (qmap->omap[n] != id)
+				idm_push(&idm, n);
+		} else
+			n = idm_new(&qmap->idm);
+	} else {
+		n = idm_new(&qmap->idm);
 		id = n;
+		rkey = &n;
+	}
 
 #ifdef FEAT_REHASH
 	if (qmap->m <= id)
@@ -520,7 +534,7 @@ qmap_PUT(unsigned hd, const void * const key,
 		return QMAP_MISS;
 #endif
 
-	qmap_mPUT(hd, QMAP_KEY, key ? key : &n, id);
+	qmap_mPUT(hd, QMAP_KEY, rkey, id);
 	qmap_mPUT(hd, QMAP_VALUE, value, id);
 
 	qmap->omap[n] = id;
@@ -555,6 +569,7 @@ _qmap_put(unsigned hd, const void * const key,
 
 		iqmap = &qmaps[in_hd];
 		iqmap->tophd = hd;
+		iqmap->topid = id;
 
 		if (qmap->assoc) {
 			iqmap->assoc = qmap->assoc;
@@ -571,7 +586,7 @@ _qmap_put(unsigned hd, const void * const key,
 		in_hd = * (unsigned *)
 			qmap_rval(hd, QMAP_VALUE, id);
 
-	return qmap_PUT(in_hd, key, value);
+	return qmap_PUT(in_hd, NULL, value);
 }
 
 unsigned /* API */

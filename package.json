@@ -1,6 +1,6 @@
 {
   "name": "@tty-pt/qmap",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Simple in-memory C generic hashtables",
   "main": "index.js",
   "scripts": {
@@ -19,11 +19,11 @@
     "Makefile"
   ],
   "peerDependencies": {
-    "@tty-pt/mk": "^0.1.12",
-    "@tty-pt/qsys": "^0.0.9"
+    "@tty-pt/mk": "^0.1.13",
+    "@tty-pt/qsys": "^0.0.10"
   },
   "devDependencies": {
-    "@tty-pt/mk": "^0.1.12",
-    "@tty-pt/qsys": "^0.0.9"
+    "@tty-pt/mk": "^0.1.13",
+    "@tty-pt/qsys": "^0.0.10"
   }
 }

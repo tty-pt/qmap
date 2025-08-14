@@ -94,13 +94,14 @@ gen_get(unsigned hd, void *key, void *expects)
 	return ret;
 }
 
-static inline void
+static inline unsigned
 gen_put(unsigned hd, void *key, void *value)
 {
 	unsigned akey = qmap_put(hd, key, value);
 	if (!key)
 		key = &akey;
 	gen_get(hd, key, value);
+	return akey;
 }
 
 static inline int
@@ -302,6 +303,40 @@ void test_nineth(void)
 	qmap_close(hd);
 }
 
+static inline
+void test_tenth(void)
+{
+	unsigned cur_id, key;
+	unsigned hd = gen_open(UTOS, QMAP_AINDEX);
+	unsigned keys[] = { 3, 3, 2 };
+	char value[MAX_LEN];
+
+	keys[0] = gen_put(hd, NULL, "hello");
+	gen_put(hd, &keys[0], "hi");
+	gen_put(hd, NULL, "ola");
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	WARN("Keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	gen_del(hd, &keys[0], NULL);
+	WARN("After del keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+	WARN("After del unkeyed\n");
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	qmap_close(hd);
+}
+
 int main(void) {
 	qmap_init();
 
@@ -322,6 +357,8 @@ int main(void) {
 	test_eighth();
 	fprintf(stderr, "nineth\n");
 	test_nineth();
+	fprintf(stderr, "tenth\n");
+	test_tenth();
 
 	return -errors;
 }
