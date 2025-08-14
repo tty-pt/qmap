@@ -9,26 +9,26 @@ importers:
   .:
     devDependencies:
       '@tty-pt/mk':
-        specifier: ^0.1.9
-        version: 0.1.9
+        specifier: ^0.1.13
+        version: 0.1.13
       '@tty-pt/qsys':
-        specifier: ^0.0.9
-        version: 0.0.9(@tty-pt/mk@0.1.9)
+        specifier: ^0.0.10
+        version: 0.0.10(@tty-pt/mk@0.1.13)
 
 packages:
 
-  '@tty-pt/mk@0.1.9':
-    resolution: {integrity: sha512-lBJCF9qKPdG8uEnEx3CCqNEYgO7YvmkkQhmrQc996gUH0lNIDBd2ecpAI2eXZVQii+ZqjSxcN6jjhjxwio/F5Q==}
+  '@tty-pt/mk@0.1.13':
+    resolution: {integrity: sha512-JBs0+fI7z3G+t66epXBEvFgkjjnN2ag2UW/ODIWxogIk5Om7Y/na6CDxCjUSL2/n3fiVV8jbT3dKGxJrVU37eQ==}
 
-  '@tty-pt/qsys@0.0.9':
-    resolution: {integrity: sha512-aXQCoH0uEFNvxGEeU6bbsms5CUQbHxlaHhUV5/Do0aaC+lbrQF0jaO8IguLOSmy/z1Et+i5WlInGmkUVTtgsCw==}
+  '@tty-pt/qsys@0.0.10':
+    resolution: {integrity: sha512-2cn//ClnWSlBYB8//7CaSO9RB+n9qK2CGl6YuaFiO+eBK8PwDAD6N6E2tJH6e4Q3jmXQDo2SF+DWY/BnyxT6eA==}
     peerDependencies:
-      '@tty-pt/mk': ^0.1.9
+      '@tty-pt/mk': ^0.1.13
 
 snapshots:
 
-  '@tty-pt/mk@0.1.9': {}
+  '@tty-pt/mk@0.1.13': {}
 
-  '@tty-pt/qsys@0.0.9(@tty-pt/mk@0.1.9)':
+  '@tty-pt/qsys@0.0.10(@tty-pt/mk@0.1.13)':
     dependencies:
-      '@tty-pt/mk': 0.1.9
+      '@tty-pt/mk': 0.1.13

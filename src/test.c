@@ -331,6 +331,16 @@ void test_tenth(void)
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 
+	gen_del(hd, &keys[0], NULL);
+	printf("After del keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+	printf("After del unkeyed\n");
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
 	qmap_close(hd);
 }
 

@@ -78,6 +78,10 @@ ITER '0' - 'hi'
 ITER '1' - 'ola'
 Keyed iter
 ITER '0' - 'hi'
+gen_get_test(3, 0, (null)) = -1 ✅
+After del keyed iter
+After del unkeyed
+ITER '1' - 'ola'
 eleventh
 gen_get_test(3, 3, 2) = 2 ✅
 gen_get_test(3, 6, 4) = 4 ✅
