@@ -1,0 +1,81 @@
+first
+gen_get_test(3, 3, hello) = hello ✅
+gen_get_test(3, 5, hi) = hi ✅
+gen_get_test(3, 3, hello) = -1 ✅
+second
+gen_get_test(3, hello, 9) = 9 ✅
+gen_get_test(3, hi, 7) = 7 ✅
+third
+gen_get_test(3, 3, 5) = 5 ✅
+gen_get_test(3, 9, 7) = 7 ✅
+ITER '3' - '5'
+ITER '9' - '7'
+fourth
+gen_get_test(3, 3, hello) = hello ✅
+gen_get_test(3, 9, hi) = hi ✅
+gen_get_test(4, hello, 3) = 3 ✅
+gen_get_test(4, hi, 9) = 9 ✅
+fifth
+gen_get_test(3, hello, 3) = 3 ✅
+gen_get_test(3, hi, 9) = 9 ✅
+fifth two-way
+gen_get_test(4, 3, hello) = hello ✅
+gen_get_test(4, 9, hi) = hi ✅
+sixth
+gen_get_test(3, hello, hellov) = hellov ✅
+gen_get_test(3, hi, hiv) = hiv ✅
+gen_get_test(4, hellov, hello) = hello ✅
+gen_get_test(4, hiv, hi) = hi ✅
+seventh
+gen_get_test(3, hello, olleh) = olleh ✅
+gen_get_test(3, hi, ih) = ih ✅
+gen_get_test(3, ola, alo) = alo ✅
+ITER 'hello' - 'olleh'
+ITER 'hi' - 'ih'
+ITER 'ola' - 'alo'
+keyed iter
+ITER 'hello' - 'olleh'
+gen_get_test(4, alo, (null)) = -1 ✅
+gen_get_test(4, olleh, hello) = hello ✅
+gen_get_test(4, ih, hi) = hi ✅
+reverse iter
+ITER 'olleh' - 'hello'
+ITER 'ih' - 'hi'
+reverse keyed iter
+ITER 'ih' - 'hi'
+eighth
+gen_get_test(3, 0, hello) = hello ✅
+gen_get_test(3, 1, hi) = hi ✅
+gen_get_test(3, 2, ola) = ola ✅
+ITER '0' - 'hello'
+ITER '1' - 'hi'
+ITER '2' - 'ola'
+reversed
+ITER 'hello' - '0'
+ITER 'hi' - '1'
+ITER 'ola' - '2'
+nineth
+gen_get_test(3, 3, hello) = hello ✅
+gen_get_test(3, 2, ola) = ola ✅
+ITER '3' - 'hello'
+ITER '3' - 'hi'
+ITER '2' - 'ola'
+Keyed iter
+ITER '3' - 'hello'
+ITER '3' - 'hi'
+gen_get_test(3, 3, (null)) = -1 ✅
+After del keyed iter
+After del unkeyed
+ITER '2' - 'ola'
+tenth
+gen_get_test(3, 0, hello) = hello ✅
+gen_get_test(3, 0, hi) = hi ✅
+gen_get_test(3, 1, ola) = ola ✅
+ITER '0' - 'hi'
+ITER '1' - 'ola'
+Keyed iter
+ITER '0' - 'hi'
+gen_get_test(3, 0, (null)) = -1 ✅
+After del keyed iter
+After del unkeyed
+ITER '1' - 'ola'

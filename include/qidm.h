@@ -102,4 +102,30 @@ unsigned idm_new(idm_t *idm) {
 	return ret;
 }
 
+static inline
+unsigned idm_push(idm_t *idm, unsigned n) {
+	unsigned i;
+
+	if (idm->last > n) {
+		struct ids_item *item = ids_iter(&idm->free);
+
+		while ((item = ids_next(&i, item))) {
+			if (i != n)
+				continue;
+
+			SLIST_REMOVE(&idm->free, item,
+					ids_item, entry);
+			return n;
+		}
+
+		return IDM_MISS;
+	}
+	
+	for (i = idm->last; i < n; i++)
+		ids_push(&idm->free, i);
+
+	idm->last = n + 1;
+	return n;
+}
+
 #endif
