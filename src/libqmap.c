@@ -504,13 +504,33 @@ qmap_PUT(unsigned hd, const void * const key,
 		const void * const value)
 {
 	qmap_t *qmap = &qmaps[hd];
-	unsigned n = idm_new(&qmap->idm);
+	unsigned n;
 	unsigned id;
+	void *rkey;
 
+#if 1
+	rkey = key ? key : &n;
+	n = idm_new(&qmap->idm);
 	if (key)
 		id = qmap_id(hd, key);
 	else
 		id = n;
+#else
+	rkey = key;
+	if (key) {
+		id = qmap_id(hd, key);
+		if (qmap->flags & QMAP_AINDEX) {
+			n = id;
+			if (qmap->omap[n] != id)
+				idm_push(&idm, n);
+		} else
+			n = idm_new(&qmap->idm);
+	} else {
+		n = idm_new(&qmap->idm);
+		id = n;
+		rkey = &n;
+	}
+#endif
 
 #ifdef FEAT_REHASH
 	if (qmap->m <= id)
@@ -520,7 +540,7 @@ qmap_PUT(unsigned hd, const void * const key,
 		return QMAP_MISS;
 #endif
 
-	qmap_mPUT(hd, QMAP_KEY, key ? key : &n, id);
+	qmap_mPUT(hd, QMAP_KEY, rkey, id);
 	qmap_mPUT(hd, QMAP_VALUE, value, id);
 
 	qmap->omap[n] = id;
