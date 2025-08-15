@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <qsys.h>
 
 char *good = "✅";
 char *bad = "❌";
@@ -71,8 +72,11 @@ _gen_get(unsigned hd, void *key, void *expects, int reverse)
 		return !reverse;
 	}
 
-	mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
-		? rbad : rgood;
+	if (expects || !(qmap_flags(hd) & QMAP_DUP))
+		mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
+			? rbad : rgood;
+	else
+		mark = rbad;
 
 	memset(buf, 0, sizeof(buf));
 	qmap_print(buf, hd, QMAP_VALUE, ret);
@@ -259,6 +263,40 @@ void test_eighth(void)
 	cur_id = qmap_iter(hd + 1, NULL);
 	while (qmap_next(value, &key, cur_id))
 		printf("ITER '%s' - '%u'\n", value, key);
+
+	qmap_close(hd);
+}
+
+static inline
+void test_nineth(void)
+{
+	unsigned cur_id, key;
+	unsigned hd = gen_open(UTOS, QMAP_DUP);
+	unsigned keys[] = { 3, 3, 2 };
+	char value[MAX_LEN];
+
+	gen_put(hd, &keys[0], "hello");
+	qmap_put(hd, &keys[1], "hi");
+	gen_put(hd, &keys[2], "ola");
+
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	WARN("Keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+
+	gen_del(hd, &keys[0], NULL);
+	WARN("After del keyed iter\n");
+	cur_id = qmap_iter(hd, &keys[0]);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
+	WARN("After del unkeyed\n");
+	cur_id = qmap_iter(hd, NULL);
+	while (qmap_next(&key, value, cur_id))
+		printf("ITER '%u' - '%s'\n", key, value);
 
 	qmap_close(hd);
 }

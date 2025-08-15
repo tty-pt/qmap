@@ -19,8 +19,9 @@
 #define QMAP_SEED 13
 #define QMAP_DEFAULT_MASK 0x7FFF
 
-#define DEBUG_LVL 0
-/* #define FEAT_DUP_PRIMARY */
+#define DEBUG_LVL 1
+/* #define FEAT_AINDEX_OVERWRITE */
+/* #define FEAT_DUP_TWO_WAY */
 /* #define FEAT_REHASH */
 
 #define DEBUG(lvl, ...) \
@@ -43,7 +44,7 @@ typedef struct {
 	idm_t idm;
 
 	unsigned phd;
-	unsigned tophd;
+	unsigned tophd, topid;
 	qmap_assoc_t *assoc;
 } qmap_t;
 
@@ -254,7 +255,7 @@ qmap_len(unsigned hd, const void * const value,
 
 	if (type->len)
 		return type->len;
-#ifndef FEAT_DUP_PRIMARY
+#ifndef FEAT_DUP_TWO_WAY
 	return type->measure(value);
 #else
 	else if (type->measure)
@@ -290,8 +291,8 @@ _qmap_open(const qmap_type_t * const key_type,
 	qmap_t *qmap = &qmaps[hd];
 	unsigned len;
 	size_t ids_len, keys_len, values_len;
-
-	DEBUG(3, "_open %u %p %p %u %u\n",
+	
+	DEBUG(1, "_open %u %p %p %u %u\n",
 			hd, (void *) key_type,
 			(void *) value_type,
 			mask, flags);
@@ -347,7 +348,7 @@ qmap_topen(const qmap_type_t *key_type,
 		unsigned mask, unsigned flags)
 {
 	const qmap_type_t *backup_key_type = key_type;
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	int prim_dup = 0;
 #endif
 
@@ -357,7 +358,7 @@ qmap_topen(const qmap_type_t *key_type,
 	if (!(flags & QMAP_TWO_WAY))
 		return phd;
 
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	// we need a special type to account
 	// for both key and value in this case
 	// in case we want n <-> n
@@ -383,7 +384,7 @@ qmap_topen(const qmap_type_t *key_type,
 
 	qmap_assoc(phd + 1, phd, qmap_assoc_rhd);
 
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	if (prim_dup) {
 		_qmap_open(key_type, value_type,
 				mask, flags);
@@ -504,13 +505,36 @@ qmap_PUT(unsigned hd, const void * const key,
 		const void * const value)
 {
 	qmap_t *qmap = &qmaps[hd];
-	unsigned n = idm_new(&qmap->idm);
+	unsigned n;
 	unsigned id;
+	const void *rkey;
 
+#if 1
+	rkey = key ? key : &n;
+	n = idm_new(&qmap->idm);
 	if (key)
 		id = qmap_id(hd, key);
 	else
 		id = n;
+#else
+	rkey = key;
+	if (key) {
+		id = qmap_id(hd, key);
+		if (qmap->flags & QMAP_AINDEX) {
+			n = id;
+			if (qmap->omap[n] != id)
+				idm_push(&idm, n);
+		} else {
+			n = idm_new(&qmap->idm);
+			/* n = prev_n == QMAP_MISS ? idm_new(&qmap->idm) : prev_n; */
+		}
+	} else {
+			n = idm_new(&qmap->idm);
+		/* n = prev_n == QMAP_MISS ? idm_new(&qmap->idm) : prev_n; */
+		id = n;
+		rkey = &n;
+	}
+#endif
 
 #ifdef FEAT_REHASH
 	if (qmap->m <= id)
@@ -520,14 +544,14 @@ qmap_PUT(unsigned hd, const void * const key,
 		return QMAP_MISS;
 #endif
 
-	qmap_mPUT(hd, QMAP_KEY, key ? key : &n, id);
+	qmap_mPUT(hd, QMAP_KEY, rkey, id);
 	qmap_mPUT(hd, QMAP_VALUE, value, id);
 
 	qmap->omap[n] = id;
 	qmap->map[id] = n;
 	DEBUG(4, "%u's _put %u %u\n", hd, id, n);
 
-	return id;
+	return n;
 }
 
 /* this is a highter-level put but for internal use only.
@@ -555,6 +579,7 @@ _qmap_put(unsigned hd, const void * const key,
 
 		iqmap = &qmaps[in_hd];
 		iqmap->tophd = hd;
+		iqmap->topid = id;
 
 		if (qmap->assoc) {
 			iqmap->assoc = qmap->assoc;
@@ -562,30 +587,31 @@ _qmap_put(unsigned hd, const void * const key,
 		}
 
 #ifndef FEAT_REHASH
-		if (qmap_PUT(hd, key, &in_hd)
-				== QMAP_MISS)
-
-			return QMAP_MISS;
+		n = qmap_PUT(hd, key, &in_hd);
 #endif
 	} else
 		in_hd = * (unsigned *)
 			qmap_rval(hd, QMAP_VALUE, id);
 
-	return qmap_PUT(in_hd, key, value);
+#ifdef FEAT_AINDEX_OVERWRITE
+	qmap_PUT(in_hd, NULL, value);
+#else
+	qmap_PUT(in_hd, key, value);
+#endif
+	return n;
 }
 
 unsigned /* API */
 qmap_put(unsigned hd, const void * const key,
 		const void * const value)
 {
-#ifdef FEAT_DUP_PRIMARY
+	unsigned ret, cur, linked_hd, n;
+
+#ifdef FEAT_DUP_TWO_WAY
 	qmap_t *qmap = &qmaps[hd];
 	size_t key_len, value_len;
 	unsigned flags = qmap->flags;
-#endif
-	unsigned ret, cur, linked_hd;
 
-#ifdef FEAT_DUP_PRIMARY
 	if (key == NULL)
 		goto normal;
 
@@ -606,24 +632,14 @@ qmap_put(unsigned hd, const void * const key,
 		memcpy(buf + key_len,
 				value, value_len);
 
-		ret = _qmap_put(hd, buf, value);
-#ifndef FEAT_REHASH
-		if (ret == QMAP_MISS)
-			return QMAP_MISS;
-#endif
+		n = _qmap_put(hd, buf, value);
 		goto proceed;
 	}
-
 normal:
 #endif
-	ret = _qmap_put(hd, key, value);
+	n = _qmap_put(hd, key, value);
 
-#ifndef FEAT_REHASH
-	if (ret == QMAP_MISS)
-		return QMAP_MISS;
-#endif
-
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 proceed:
 #endif
 
@@ -639,7 +655,7 @@ proceed:
 		_qmap_put(linked_hd, skey, value);
 	}
 
-	return ret;
+	return qmaps[hd].omap[n];
 }
 
 /* }}} */
@@ -687,6 +703,29 @@ qmap_get(unsigned hd, void * const value,
 	qmap_cget(value, cur_id, QMAP_VALUE);
 	qmap_fin(cur_id);
 	return 0;
+}
+
+unsigned qmap_pid(unsigned hd, unsigned id) {
+	register qmap_t *qmap = &qmaps[hd];
+	register unsigned n;
+
+	if (qmap->phd == hd)
+		return id;
+
+	unsigned tid = id;
+	unsigned thd = hd;
+
+	if (qmap->tophd) {
+		tid = qmap->topid;
+		thd = qmap->tophd;
+	}
+
+	n = qmaps[thd].map[tid];
+
+	// n always represents the tophd, and also the primary hd
+	// as a consequence. Because secondaries always match the
+	// primaries ns.
+	return qmaps[qmap->phd].omap[n];
 }
 
 /* This gets the pointer to the data under the cursor */
@@ -797,14 +836,16 @@ qmap_del(unsigned hd,
 	}
 
 	cur = qmap_iter(hd, key);
-	while (qmap_lnext(cur)) {
-		if (value && qmap_ccmp(cur, QMAP_VALUE,
+
+	if (value) while (qmap_lnext(cur)) {
+		if (qmap_ccmp(cur, QMAP_VALUE,
 					value))
 			continue;
 		qmap_cdel(cur);
 		qmap_fin(cur);
 		return;
-	}
+	} else while (qmap_lnext(cur))
+		qmap_cdel(cur);
 }
 
 /* }}} */
@@ -916,17 +957,24 @@ qmap_close(unsigned hd)
 {
 	qmap_t *qmap = &qmaps[hd];
 
-	if (qmap->flags & QMAP_TWO_WAY) {
+#if 1
+	if (qmap->flags & QMAP_TWO_WAY)
 		qmap_close(hd + 1);
-#ifdef FEAT_DUP_PRIMARY
-		if (qmap->flags & QMAP_DUP) {
-			qmap_close(hd + 2);
-			free(qmap->type[QMAP_KEY]);
-		}
-#endif
-	}
-
 	qmap_drop(hd);
+#else
+	qmap_drop(hd);
+	unsigned cur_id = qmap_iter(assoc_hd, &hd);
+
+	while (qmap_lnext(cur_id)) {
+		unsigned ahd = QMAP_MISS;
+		qmap_cget(&ahd, cur_id, QMAP_VALUE);
+		/* qmap_cdel(cur_id); */
+		/* ids_push(&to_close, ahd); */
+		DEBUG(0, "close assoc %u\n", ahd);
+		/* qmap_close(ahd); */
+	}
+#endif
+
 	qmap_del(assoc_hd, &hd, NULL);
 	ids_drop(&qmap->idm.free);
 	qmap->idm.last = 0;
