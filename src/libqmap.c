@@ -943,17 +943,24 @@ qmap_close(unsigned hd)
 {
 	qmap_t *qmap = &qmaps[hd];
 
-	if (qmap->flags & QMAP_TWO_WAY) {
+#if 1
+	if (qmap->flags & QMAP_TWO_WAY)
 		qmap_close(hd + 1);
-#ifdef FEAT_DUP_PRIMARY
-		if (qmap->flags & QMAP_DUP) {
-			qmap_close(hd + 2);
-			free(qmap->type[QMAP_KEY]);
-		}
-#endif
-	}
-
 	qmap_drop(hd);
+#else
+	qmap_drop(hd);
+	unsigned cur_id = qmap_iter(assoc_hd, &hd);
+
+	while (qmap_lnext(cur_id)) {
+		unsigned ahd = QMAP_MISS;
+		qmap_cget(&ahd, cur_id, QMAP_VALUE);
+		/* qmap_cdel(cur_id); */
+		/* ids_push(&to_close, ahd); */
+		DEBUG(0, "close assoc %u\n", ahd);
+		/* qmap_close(ahd); */
+	}
+#endif
+
 	qmap_del(assoc_hd, &hd, NULL);
 	ids_drop(&qmap->idm.free);
 	qmap->idm.last = 0;
