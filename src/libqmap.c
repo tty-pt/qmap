@@ -44,7 +44,7 @@ typedef struct {
 	idm_t idm;
 
 	unsigned phd;
-	unsigned tophd;
+	unsigned tophd, topid;
 	qmap_assoc_t *assoc;
 } qmap_t;
 
@@ -291,8 +291,8 @@ _qmap_open(const qmap_type_t * const key_type,
 	qmap_t *qmap = &qmaps[hd];
 	unsigned len;
 	size_t ids_len, keys_len, values_len;
-
-	DEBUG(3, "_open %u %p %p %u %u\n",
+	
+	DEBUG(1, "_open %u %p %p %u %u\n",
 			hd, (void *) key_type,
 			(void *) value_type,
 			mask, flags);
@@ -576,6 +576,7 @@ _qmap_put(unsigned hd, const void * const key,
 
 		iqmap = &qmaps[in_hd];
 		iqmap->tophd = hd;
+		iqmap->topid = id;
 
 		if (qmap->assoc) {
 			iqmap->assoc = qmap->assoc;
@@ -707,6 +708,29 @@ qmap_get(unsigned hd, void * const value,
 	qmap_cget(value, cur_id, QMAP_VALUE);
 	qmap_fin(cur_id);
 	return 0;
+}
+
+unsigned qmap_pid(unsigned hd, unsigned id) {
+	register qmap_t *qmap = &qmaps[hd];
+	register unsigned n;
+
+	if (qmap->phd == hd)
+		return id;
+
+	unsigned tid = id;
+	unsigned thd = hd;
+
+	if (qmap->tophd) {
+		tid = qmap->topid;
+		thd = qmap->tophd;
+	}
+
+	n = qmaps[thd].map[tid];
+
+	// n always represents the tophd, and also the primary hd
+	// as a consequence. Because secondaries always match the
+	// primaries ns.
+	return qmaps[qmap->phd].omap[n];
 }
 
 /* This gets the pointer to the data under the cursor */
