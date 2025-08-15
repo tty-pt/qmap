@@ -20,7 +20,8 @@
 #define QMAP_DEFAULT_MASK 0x7FFF
 
 #define DEBUG_LVL 1
-/* #define FEAT_DUP_PRIMARY */
+#define FEAT_AINDEX_OVERWRITE
+/* #define FEAT_DUP_TWO_WAY */
 /* #define FEAT_REHASH */
 
 #define DEBUG(lvl, ...) \
@@ -254,7 +255,7 @@ qmap_len(unsigned hd, const void * const value,
 
 	if (type->len)
 		return type->len;
-#ifndef FEAT_DUP_PRIMARY
+#ifndef FEAT_DUP_TWO_WAY
 	return type->measure(value);
 #else
 	else if (type->measure)
@@ -347,7 +348,7 @@ qmap_topen(const qmap_type_t *key_type,
 		unsigned mask, unsigned flags)
 {
 	const qmap_type_t *backup_key_type = key_type;
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	int prim_dup = 0;
 #endif
 
@@ -357,7 +358,7 @@ qmap_topen(const qmap_type_t *key_type,
 	if (!(flags & QMAP_TWO_WAY))
 		return phd;
 
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	// we need a special type to account
 	// for both key and value in this case
 	// in case we want n <-> n
@@ -383,7 +384,7 @@ qmap_topen(const qmap_type_t *key_type,
 
 	qmap_assoc(phd + 1, phd, qmap_assoc_rhd);
 
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 	if (prim_dup) {
 		_qmap_open(key_type, value_type,
 				mask, flags);
@@ -506,7 +507,7 @@ qmap_PUT(unsigned hd, const void * const key,
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n;
 	unsigned id;
-	void *rkey;
+	const void *rkey;
 
 #if 1
 	rkey = key ? key : &n;
@@ -598,14 +599,13 @@ unsigned /* API */
 qmap_put(unsigned hd, const void * const key,
 		const void * const value)
 {
-#ifdef FEAT_DUP_PRIMARY
+	unsigned ret, cur, linked_hd;
+
+#ifdef FEAT_DUP_TWO_WAY
 	qmap_t *qmap = &qmaps[hd];
 	size_t key_len, value_len;
 	unsigned flags = qmap->flags;
-#endif
-	unsigned ret, cur, linked_hd;
 
-#ifdef FEAT_DUP_PRIMARY
 	if (key == NULL)
 		goto normal;
 
@@ -643,7 +643,7 @@ normal:
 		return QMAP_MISS;
 #endif
 
-#ifdef FEAT_DUP_PRIMARY
+#ifdef FEAT_DUP_TWO_WAY
 proceed:
 #endif
 
