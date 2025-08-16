@@ -20,7 +20,7 @@
 #define QMAP_DEFAULT_MASK 0x7FFF
 
 #define DEBUG_LVL 1
-/* #define FEAT_AINDEX_OVERWRITE */
+#define FEAT_AINDEX_OVERWRITE
 /* #define FEAT_DUP_TWO_WAY */
 /* #define FEAT_REHASH */
 
@@ -332,6 +332,8 @@ _qmap_open(const qmap_type_t * const key_type,
 	qmap->mask = mask;
 	qmap->flags = flags;
 	qmap->idm = idm_init();
+	qmap->tophd = qmap->topn = 0;
+	qmap->phd = hd;
 
 	memset(qmap->map, 0xFF, ids_len);
 	memset(qmap->omap, 0xFF, ids_len);
@@ -475,7 +477,7 @@ qmap_rehash(unsigned hd, unsigned new_m)
  */
 static inline void
 qmap_mPUT(unsigned hd, enum qmap_mbr t,
-		const void * const value, unsigned id)
+		const void * const value, unsigned n)
 {
 	qmap_t *qmap = &qmaps[hd];
 	const void * real_value = value;
@@ -494,6 +496,7 @@ qmap_mPUT(unsigned hd, enum qmap_mbr t,
 		real_value = &tmp;
 	}
 
+	unsigned id = qmap->omap[n];
 	memcpy(qmap_val(qmap, t, id), real_value, len);
 }
 
@@ -502,7 +505,7 @@ qmap_mPUT(unsigned hd, enum qmap_mbr t,
  */
 static inline unsigned
 qmap_PUT(unsigned hd, const void * const key,
-		const void * const value)
+		const void * const value, unsigned pn)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n;
@@ -521,13 +524,13 @@ qmap_PUT(unsigned hd, const void * const key,
 	if (key) {
 		id = qmap_id(hd, key);
 		if (qmap->flags & QMAP_AINDEX) {
-			n = id;
+			n = pn == QMAP_MISS ? id : pn;
 			if (qmap->omap[n] != id)
 				idm_push(&qmap->idm, n);
 		} else
 			n = idm_new(&qmap->idm);
 	} else {
-			n = idm_new(&qmap->idm);
+		n = idm_new(&qmap->idm);
 		id = n;
 		rkey = &n;
 	}
@@ -542,10 +545,11 @@ qmap_PUT(unsigned hd, const void * const key,
 	}
 #endif
 
-	qmap_mPUT(hd, QMAP_KEY, rkey, id);
-	qmap_mPUT(hd, QMAP_VALUE, value, id);
-
 	qmap->omap[n] = id;
+
+	qmap_mPUT(hd, QMAP_KEY, rkey, n);
+	qmap_mPUT(hd, QMAP_VALUE, value, n);
+
 	qmap->map[id] = n;
 	DEBUG(4, "%u's _put %u %u\n", hd, id, n);
 
@@ -557,13 +561,13 @@ qmap_PUT(unsigned hd, const void * const key,
  */
 static unsigned
 _qmap_put(unsigned hd, const void * const key,
-		const void * const value)
+		const void * const value, unsigned pn)
 {
 	qmap_t *qmap = &qmaps[hd], *iqmap;
 	unsigned in_hd, id, n;
 
 	if (!(qmap->flags & QMAP_DUP)) {
-		n = qmap_PUT(hd, key, value);
+		n = qmap_PUT(hd, key, value, pn);
 		return n;
 	}
 
@@ -586,14 +590,14 @@ _qmap_put(unsigned hd, const void * const key,
 		}
 
 #ifndef FEAT_REHASH
-		n = qmap_PUT(hd, key, &in_hd);
+		n = qmap_PUT(hd, key, &in_hd, pn);
 		iqmap->topn = n;
 #endif
 	} else
 		in_hd = * (unsigned *)
 			qmap_rval(hd, QMAP_VALUE, id);
 
-	qmap_PUT(in_hd, NULL, value);
+	qmap_PUT(in_hd, NULL, value, QMAP_MISS);
 	return n;
 }
 
@@ -628,12 +632,12 @@ qmap_put(unsigned hd, const void * const key,
 		memcpy(buf + key_len,
 				value, value_len);
 
-		n = _qmap_put(hd, buf, value);
+		n = _qmap_put(hd, buf, value, QMAP_MISS);
 		goto proceed;
 	}
 normal:
 #endif
-	n = _qmap_put(hd, key, value);
+	n = _qmap_put(hd, key, value, QMAP_MISS);
 
 #ifdef FEAT_DUP_TWO_WAY
 proceed:
@@ -648,7 +652,7 @@ proceed:
 		aqmap = &qmaps[linked_hd];
 		aqmap->assoc(&skey, key ? key : &ret, value);
 
-		_qmap_put(linked_hd, skey, value);
+		_qmap_put(linked_hd, skey, value, n);
 	}
 
 	return qmaps[hd].omap[n];
@@ -760,56 +764,69 @@ qmap_cget(void * const target,
 
 /* DELETE {{{ */
 
-void /* API */
-qmap_cdel(unsigned cur_id)
-{
-	cur_id = qmap_low_cur(cur_id);
-	register qmap_cur_t *cursor
-		= &qmap_cursors[cur_id];
-	register qmap_t *qmap = &qmaps[cursor->hd];
-	unsigned n, id;
-	n = cursor->position - 1;
-	id = qmap->omap[n];
+// simplest possible
+static inline void
+qmap_rdel(unsigned hd, unsigned n) {
+	register qmap_t *qmap = &qmaps[hd];
+	unsigned id = qmap->omap[n];
 
 	if (!(qmap->type[QMAP_KEY]->len)) {
-		void *key
-			= qmap_val(qmap, QMAP_KEY, id);
-
+		void *key = qmap_val(qmap, QMAP_KEY, id);
 		free(* (void **) key);
 	}
 
-	void *value = qmap_val(qmap, QMAP_VALUE, id);
-
-	if (qmap->flags & QMAP_DUP)
-		qmap_drop(* (unsigned *) value);
-	else if (!(qmap->type[QMAP_VALUE]->len))
+	if (!((qmap->flags & QMAP_DUP) || (qmap->type[QMAP_VALUE]->len))) {
+		void *value = qmap_val(qmap, QMAP_VALUE, id);
 		free(* (void **) value);
+	}
 
-	idm_del(&qmap->idm, n);
 	qmap->map[id] = QMAP_MISS;
 	qmap->omap[n] = QMAP_MISS;
+	idm_del(&qmap->idm, n);
 }
 
-static inline void
-qmap_pdel(unsigned hd, const void * const key)
+void /* API */
+qmap_cdel(unsigned cur_id)
 {
-	qmap_t *qmap = &qmaps[hd];
-	unsigned n, id = qmap_id(hd, key);
-	qmap_t *pqmap = &qmaps[qmap->phd];
-	void *real_key, *real_value;
+	register qmap_cur_t *cursor = &qmap_cursors[cur_id];
+	register qmap_t *qmap = &qmaps[cursor->hd];
+	unsigned n;
 
-	if (id >= qmap->m)
-		return; // not present
+	if (cursor->sub_cur) {
+		cursor = &qmap_cursors[cursor->sub_cur];
+		qmap = &qmaps[cursor->hd];
+		n = cursor->position - 1;
 
-	n = qmap->map[id];
-	id = pqmap->omap[n];
+		qmap_rdel(cursor->hd, n);
+		if (!qmap->idm.last) {
+			qmap_drop(cursor->hd);
+			qmap_rdel(qmap->tophd, qmap->topn);
+		}
 
-	real_key = qmap_rval(qmap->phd, QMAP_KEY, id);
-	real_value = qmap_rval(qmap->phd,
-			QMAP_VALUE, id);
+		cursor = &qmap_cursors[cur_id];
+		qmap = &qmaps[cursor->hd];
+		n = cursor->position - 1;
+		if (qmap->phd != cursor->hd)
+			qmap_rdel(qmap->phd, n);
+		return;
+	}
 
-	qmap_del(qmap->phd, real_key, real_value);
-	idm_del(&qmap->idm, n);
+	n = cursor->position - 1;
+
+	if (qmap->phd != cursor->hd)
+		qmap_rdel(qmap->phd, n);
+
+	else {
+		unsigned cur = qmap_iter(assoc_hd, &cursor->hd);
+
+		while (qmap_lnext(cur)) {
+			unsigned ahd;
+			qmap_cget(&ahd, cur, QMAP_VALUE);
+			qmap_cdel(cur);
+		}
+
+		qmap_rdel(cursor->hd, n);
+	}
 }
 
 void /* API */
@@ -817,13 +834,12 @@ qmap_del(unsigned hd,
 		const void * const key,
 		const void * const value)
 {
-	qmap_t *qmap = &qmaps[hd];
 	unsigned cur;
 
-	if (qmap->assoc) {
-		qmap_pdel(hd, key);
-		return;
-	}
+	/* if (qmap->assoc) { */
+	/* 	qmap_pdel(hd, key); */
+	/* 	return; */
+	/* } */
 
 	cur = qmap_iter(hd, key);
 
@@ -909,6 +925,8 @@ cagain:
 
 			cursor->sub_cur = qmap_iter(in_hd,
 					NULL);
+
+			cursor->position++;
 		}
 
 		if (qmap_lnext(cursor->sub_cur))
@@ -917,7 +935,6 @@ cagain:
 		if (cursor->key)
 			goto end;
 
-		cursor->position++;
 		cursor->sub_cur = 0;
 		goto cagain;
 	}
@@ -988,7 +1005,7 @@ qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
 	if (!cb)
 		cb = qmap_twin_assoc;
 
-	_qmap_put(assoc_hd, &link, &hd);
+	_qmap_put(assoc_hd, &link, &hd, QMAP_MISS);
 
 	qmap->assoc = cb;
 	qmap->phd = link;
