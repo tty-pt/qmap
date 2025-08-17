@@ -1,6 +1,6 @@
 {
   "name": "@tty-pt/qmap",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "Simple in-memory C generic hashtables",
   "main": "index.js",
   "scripts": {

@@ -203,15 +203,6 @@ static inline void
 	return * (void **) value;
 }
 
-/* This is the exact same as qmap_rval except that it's meant
- * to be used with pointers.
- */
-static inline void *
-qmap_cval(qmap_cur_t *cursor, enum qmap_mbr t)
-{
-	return qmap_rval(cursor->hd, t, cursor->position - 1);
-}
-
 /* This compares the thing in the map to the pointer the user
  * provides.
  */
@@ -500,6 +491,23 @@ qmap_mPUT(unsigned hd, enum qmap_mbr t,
 	memcpy(qmap_val(qmap, t, n), real_value, len);
 }
 
+/* calculate the n of a keyed put */
+static inline unsigned
+qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
+	qmap_t *qmap = &qmaps[hd];
+
+	if (!(qmaps[qmap->phd].flags & QMAP_AINDEX))
+		return idm_new(&qmap->idm);
+
+	if (pn == QMAP_MISS)
+		pn = id;
+
+	if (qmap->omap[pn] != id)
+		idm_push(&qmap->idm, pn);
+
+	return pn;
+}
+
 /* This is similar to qmap_mPUT except that it already puts
  * both value and key, and gets an 'n' and an 'id' to insert
  */
@@ -515,15 +523,7 @@ qmap_PUT(unsigned hd, const void * const key,
 	rkey = key;
 	if (key) {
 		id = qmap_id(hd, key);
-		if (qmap->flags & QMAP_AINDEX) {
-			n = pn == QMAP_MISS
-				? idm_new(&qmap->idm)
-				: pn;
-
-			if (qmap->omap[n] != id)
-				idm_push(&qmap->idm, n);
-		} else
-			n = idm_new(&qmap->idm);
+		n = qmap_keyed_n(hd, id, pn);
 	} else {
 		n = idm_new(&qmap->idm);
 		id = n;
