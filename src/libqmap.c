@@ -496,11 +496,12 @@ static inline unsigned
 qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
 	qmap_t *qmap = &qmaps[hd];
 
-	if (!(qmaps[qmap->phd].flags & QMAP_AINDEX))
-		return idm_new(&qmap->idm);
+	if (pn == QMAP_MISS) {
+		if (!(qmaps[qmap->phd].flags & QMAP_AINDEX))
+			return idm_new(&qmap->idm);
 
-	if (pn == QMAP_MISS)
 		pn = id;
+	}
 
 	if (qmap->omap[pn] != id)
 		idm_push(&qmap->idm, pn);
