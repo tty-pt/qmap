@@ -19,8 +19,7 @@
 #define QMAP_SEED 13
 #define QMAP_DEFAULT_MASK 0x7FFF
 
-#define DEBUG_LVL 1
-#define FEAT_AINDEX_OVERWRITE
+#define DEBUG_LVL 0
 /* #define FEAT_DUP_TWO_WAY */
 /* #define FEAT_REHASH */
 
@@ -513,14 +512,6 @@ qmap_PUT(unsigned hd, const void * const key,
 	unsigned id;
 	const void *rkey;
 
-#ifndef FEAT_AINDEX_OVERWRITE
-	rkey = key ? key : &n;
-	n = idm_new(&qmap->idm);
-	if (key)
-		id = qmap_id(hd, key);
-	else
-		id = n;
-#else
 	rkey = key;
 	if (key) {
 		id = qmap_id(hd, key);
@@ -538,7 +529,6 @@ qmap_PUT(unsigned hd, const void * const key,
 		id = n;
 		rkey = &n;
 	}
-#endif
 
 #ifdef FEAT_REHASH
 	if (qmap->m <= id)
@@ -709,24 +699,6 @@ qmap_get(unsigned hd, void * const value,
 	return 0;
 }
 
-unsigned qmap_pn(unsigned hd, unsigned id) {
-	register qmap_t *qmap = &qmaps[hd];
-	register unsigned n;
-
-	if (qmap->phd == hd)
-		return id;
-
-	if (qmap->tophd)
-		n = qmap->topn;
-	else
-		n = qmaps[hd].map[id];
-
-	// n always represents the tophd, and also the
-	// primary hd as a consequence. Because secondaries
-	// always match the primaries ns.
-	return n;
-}
-
 /* This gets the pointer to the data under the cursor */
 static inline void *
 *qmap_csget(qmap_cur_t * const cursor, enum qmap_mbr t)
@@ -818,14 +790,7 @@ qmap_del(unsigned hd,
 		const void * const key,
 		const void * const value)
 {
-	unsigned cur;
-
-	/* if (qmap->assoc) { */
-	/* 	qmap_pdel(hd, key); */
-	/* 	return; */
-	/* } */
-
-	cur = qmap_iter(hd, key);
+	unsigned cur = qmap_iter(hd, key);
 
 	if (value) while (qmap_lnext(cur)) {
 		if (qmap_ccmp(cur, QMAP_VALUE,
@@ -953,23 +918,9 @@ qmap_close(unsigned hd)
 {
 	qmap_t *qmap = &qmaps[hd];
 
-#if 1
 	if (qmap->flags & QMAP_TWO_WAY)
 		qmap_close(hd + 1);
 	qmap_drop(hd);
-#else
-	qmap_drop(hd);
-	unsigned cur_id = qmap_iter(assoc_hd, &hd);
-
-	while (qmap_lnext(cur_id)) {
-		unsigned ahd = QMAP_MISS;
-		qmap_cget(&ahd, cur_id, QMAP_VALUE);
-		/* qmap_cdel(cur_id); */
-		/* ids_push(&to_close, ahd); */
-		DEBUG(0, "close assoc %u\n", ahd);
-		/* qmap_close(ahd); */
-	}
-#endif
 
 	qmap_del(assoc_hd, &hd, NULL);
 	ids_drop(&qmap->idm.free);
