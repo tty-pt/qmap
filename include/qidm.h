@@ -6,10 +6,10 @@
 
 #define IDM_MISS ((unsigned) -1)
 
-struct ids_item {
+typedef struct ids_item {
 	unsigned value;
 	SLIST_ENTRY(ids_item) entry;
-};
+} idsi_t;
 
 SLIST_HEAD(ids, ids_item);
 
@@ -27,17 +27,27 @@ ids_t ids_init(void) {
 	return list;
 }
 
+static inline void ids_free(ids_t *ids, unsigned id) {
+	idsi_t *item;
+
+	SLIST_FOREACH(item, ids, entry) {
+		if (item->value == id)
+			SLIST_REMOVE(ids, item,
+					ids_item, entry);
+	}
+}
+
 static inline
 void ids_push(ids_t *list, unsigned id) {
-	struct ids_item *item = (struct ids_item *)
-		malloc(sizeof(struct ids_item));
+	idsi_t *item = (struct ids_item *)
+		malloc(sizeof(idsi_t));
 	item->value = id;
 	SLIST_INSERT_HEAD(list, item, entry);
 }
 
 static inline
 unsigned ids_pop(ids_t *list) {
-	struct ids_item *popped = SLIST_FIRST(list);
+	idsi_t *popped = SLIST_FIRST(list);
 	unsigned ret;
 
 	if (!popped)
@@ -56,19 +66,24 @@ void ids_drop(ids_t *list) {
 
 static inline
 unsigned ids_peek(ids_t *list) {
-	struct ids_item *top = SLIST_FIRST(list);
+	idsi_t *top = SLIST_FIRST(list);
 	return top ? top->value : IDM_MISS;
 }
 
 static inline
-struct ids_item *ids_iter(ids_t *list) {
+idsi_t *ids_iter(ids_t *list) {
 	return SLIST_FIRST(list);
 }
 
-static inline
-struct ids_item *ids_next(unsigned *id, struct ids_item *last) {
-	*id = last->value;
-	return SLIST_NEXT(last, entry);
+static inline int
+ids_next(unsigned *id, idsi_t **cur) {
+	idsi_t *prev = *cur;
+	if (!prev)
+		return 0;
+
+	*id = prev->value;
+	*cur = SLIST_NEXT(prev, entry);
+	return 1;
 }
 
 static inline
@@ -108,13 +123,7 @@ unsigned idm_push(idm_t *idm, unsigned n) {
 	unsigned i;
 
 	if (idm->last > n) {
-		struct ids_item *item;
-
-		SLIST_FOREACH(item, &idm->free, entry) {
-			SLIST_REMOVE(&idm->free, item,
-					ids_item, entry);
-		}
-
+		ids_free(&idm->free, n);
 		return IDM_MISS;
 	}
 	
@@ -130,7 +139,7 @@ unsigned idm_push(idm_t *idm, unsigned n) {
 #include <stdio.h>
 static inline void
 idm_debug(idm_t *idm) {
-	struct ids_item *item;
+	idsi_t *item;
 	unsigned i;
 
 	fprintf(stderr, "last %u free", idm->last);

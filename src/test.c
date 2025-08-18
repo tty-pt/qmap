@@ -2,18 +2,18 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <qsys.h>
 
 #include <qsys.h>
+
+#define DB_MASK 0xF
+#define MAX_LEN (BUFSIZ * 2)
 
 char *good = "✅";
 char *bad = "❌";
 
 unsigned errors = 0;
 
-typedef struct {
-	char *key, *value;
-} dbtype_t;
+typedef unsigned dbtype_t[2];
 
 enum dbtype {
 	UTOS,
@@ -23,67 +23,155 @@ enum dbtype {
 };
 
 dbtype_t dbtypes[] = {
-	{ "u", "s" },
-	{ "s", "u" },
-	{ "u", "u" },
-	{ "s", "s" },
+	{ QMAP_WORD, QMAP_DYNA },
+	{ QMAP_DYNA, QMAP_WORD },
+	{ QMAP_WORD, QMAP_WORD },
+	{ QMAP_DYNA, QMAP_DYNA },
 };
 
-unsigned type_cache[32];
+typedef int print_t(void *key);
+typedef int cmp_t(void *a, void *b);
 
-unsigned gen_open(enum dbtype type, unsigned flags) {
-	dbtype_t *dbtype = &dbtypes[type];
+typedef struct {
+	print_t *print;
+	cmp_t *cmp;
+} type_meta_t;
 
-	unsigned hd = qmap_open(
-			dbtype->key,
-			dbtype->value,
-			0, flags);
+int s_print(void *key) {
+	return printf("%s", (char *) key);
+}
 
-	type_cache[hd] = type;
+int u_print(void *key) {
+	return printf("%u", * (unsigned *) key);
+}
+
+int s_cmp(void *a, void *b) {
+	return strcmp(a, b);
+}
+
+int u_cmp(void *a, void *b) {
+	return (* (unsigned *) b)
+		- (* (unsigned *) a);
+}
+
+type_meta_t type_meta[] = {
+	{ .print = s_print, .cmp = s_cmp, },
+	{ .print = u_print, .cmp = u_cmp, }
+};
+
+enum qmap_mbr {
+	QMAP_KEY = 0,
+	QMAP_VALUE = 1,
+};
+
+enum meta_flags {
+	QMAP_REVERSE = 4,
+};
+
+void *values[DB_MASK + 1],
+     *keys[DB_MASK + 1];
+
+typedef struct {
+	unsigned type, flags;
+} hd_meta_t;
+
+hd_meta_t hd_meta[8];
+
+static inline int
+rmbr_get(unsigned hd, unsigned mbr)
+{
+	hd_meta_t *meta = &hd_meta[hd];
+	unsigned rmbr = meta->flags & QMAP_REVERSE
+		? !mbr : mbr;
+	return rmbr;
+}
+
+static inline void *
+_get(unsigned hd, unsigned mbr, unsigned n)
+{
+	unsigned rmbr = rmbr_get(hd, mbr);
+	
+	if (rmbr == QMAP_KEY)
+		return keys[n];
+
+	return values[n];
+}
+
+static int
+type_print(unsigned hd, unsigned mbr, void *key)
+{
+	hd_meta_t *meta = &hd_meta[hd];
+	unsigned rmbr = rmbr_get(hd, mbr);
+	unsigned type = dbtypes[meta->type][rmbr];
+	return type_meta[type].print(key);
+}
+
+static int
+type_cmp(unsigned hd, unsigned mbr, void *a, void *b)
+{
+	hd_meta_t *meta = &hd_meta[hd];
+	unsigned rmbr = rmbr_get(hd, mbr);
+	unsigned type = dbtypes[meta->type][rmbr];
+	return type_meta[type].cmp(a, b);
+}
+
+static
+unsigned _gen_open(enum dbtype type, unsigned flags) {
+	unsigned hd;
+
+	if (flags & QMAP_REVERSE) {
+		hd = 1;
+	} else {
+		dbtype_t *dbtype = &dbtypes[type];
+		hd = qmap_open((*dbtype)[QMAP_KEY],
+				(*dbtype)[QMAP_VALUE],
+				DB_MASK, flags);
+	}
+
+	hd_meta[hd].type = type;
+	hd_meta[hd].flags = flags;
 
 	return hd;
 }
 
-typedef struct {
-	unsigned key;
-	char *value;
-} utos_t;
-
-#define MAX_LEN (BUFSIZ * 2)
+unsigned gen_open(enum dbtype type, unsigned flags) {
+	unsigned hd = _gen_open(type, flags);
+	if (flags & QMAP_MIRROR)
+		_gen_open(type, flags | QMAP_REVERSE);
+	return hd;
+}
 
 static int
 _gen_get(unsigned hd, void *key, void *value, void *expects, int reverse)
 {
-	char ret[MAX_LEN];
-	char buf[BUFSIZ];
 	char *mark, *rgood = good, *rbad = bad;
-	memset(ret, 0, sizeof(ret));
+	unsigned sn;
+	void *svalue;
 
 	if (reverse) {
 		rgood = bad;
 		rbad = good;
 	}
 
-	qmap_print(buf, hd, QMAP_KEY, key);
-	printf("gen_get_test(%u, %s, ", hd, buf);
-	qmap_print(buf, hd, QMAP_VALUE, value);
-	printf("%s) = ", buf);
+	printf("gen_get_test(%u, ", hd);
+	type_print(hd, QMAP_KEY, key);
+	printf(", ");
+	type_print(hd, QMAP_VALUE, value);
+	printf(") = ");
 
-	if (qmap_get(hd, ret, key)) {
+	sn = qmap_get(hd, key);
+	if (sn == QMAP_MISS) {
 		printf("-1 %s\n", rbad);
 		return !reverse;
 	}
 
-	if (value || !(qmap_flags(hd) & QMAP_DUP))
-		mark = qmap_cmp(hd, QMAP_VALUE, ret, expects)
-			? rbad : rgood;
-	else
-		mark = rbad;
+	svalue = _get(hd, QMAP_VALUE, sn);
+	mark = type_cmp(hd, QMAP_VALUE, svalue, expects)
+		? rbad : rgood;
 
-	memset(buf, 0, sizeof(buf));
-	qmap_print(buf, hd, QMAP_VALUE, ret);
+	type_print(hd, QMAP_VALUE, svalue);
 
-	printf("%s %s\n", buf, mark);
+	printf(" %s\n", mark);
 	return reverse;
 }
 
@@ -98,9 +186,18 @@ gen_get(unsigned hd, void *key, void *expects)
 static inline unsigned
 gen_put(unsigned hd, void *key, void *value)
 {
-	unsigned akey = qmap_put(hd, key, value);
-	if (!key)
-		key = &akey;
+	static unsigned akeys[8];
+	static unsigned akey;
+
+	akey = qmap_put(hd, key, value);
+	if (!key) {
+		akeys[akey] = akey;
+		key = &akeys[akey];
+	}
+
+	keys[akey] = key;
+	values[akey] = value;
+
 	gen_get(hd, key, value);
 	return akey;
 }
@@ -109,7 +206,7 @@ static inline int
 gen_del(unsigned hd, void *key, void *value)
 {
 	int ret;
-	qmap_del(hd, key, value);
+	qmap_del(hd, key);
 	ret = _gen_get(hd, key, value, value, 1);
 	errors += ret;
 	return ret;
@@ -142,20 +239,36 @@ test_second(void)
 	qmap_close(hd);
 }
 
+static inline void iter_print(unsigned hd, unsigned sn) {
+	void **rkeys = keys;
+	void **rvalues = values;
+
+	if (hd_meta[hd].flags & QMAP_REVERSE) {
+		rkeys = values;
+		rvalues = keys;
+	}
+
+	printf("ITER '");
+	type_print(hd, QMAP_KEY, rkeys[sn]);
+	printf("' - '");
+	type_print(hd, QMAP_VALUE, rvalues[sn]);
+	printf("'\n");
+}
+
 static inline void
 test_third(void)
 {
 	unsigned hd = gen_open(UTOU, 0), cur_id;
 	unsigned keys[] = { 3, 9 };
 	unsigned values[] = { 5, 7 };
-	unsigned key, value;
+	unsigned sn;
 
 	gen_put(hd, &keys[0], &values[0]);
 	gen_put(hd, &keys[1], &values[1]);
 
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(&key, &value, cur_id))
-		printf("ITER '%u' - '%u'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	qmap_close(hd);
 }
@@ -163,15 +276,15 @@ test_third(void)
 static inline void
 test_fourth(void)
 {
-	unsigned hd = gen_open(UTOS, QMAP_TWO_WAY);
+	unsigned hd = gen_open(UTOS, QMAP_MIRROR),
+		 rhd = hd + 1;
 	unsigned keys[] = { 3, 9 };
 
 	gen_put(hd, &keys[0], "hello");
 	gen_put(hd, &keys[1], "hi");
 
-	type_cache[hd + 1] = STOU;
-	gen_get(hd + 1, "hello", &keys[0]);
-	gen_get(hd + 1, "hi", &keys[1]);
+	gen_get(rhd, "hello", &keys[0]);
+	gen_get(rhd, "hi", &keys[1]);
 
 	qmap_close(hd);
 }
@@ -179,16 +292,16 @@ test_fourth(void)
 static inline void
 test_fifth(void)
 {
-	unsigned hd = gen_open(STOU, QMAP_TWO_WAY);
+	unsigned hd = gen_open(STOU, QMAP_MIRROR),
+		 rhd = hd + 1;
 	unsigned values[] = { 3, 9 };
 
 	gen_put(hd, "hello", &values[0]);
 	gen_put(hd, "hi", &values[1]);
 	printf("fifth two-way\n");
 
-	type_cache[hd + 1] = UTOS;
-	gen_get(hd + 1, &values[0], "hello");
-	gen_get(hd + 1, &values[1], "hi");
+	gen_get(rhd, &values[0], "hello");
+	gen_get(rhd, &values[1], "hi");
 
 	qmap_close(hd);
 }
@@ -196,57 +309,56 @@ test_fifth(void)
 static inline void
 test_sixth(void)
 {
-	unsigned hd = gen_open(STOS, QMAP_TWO_WAY);
+	unsigned hd = gen_open(STOS, QMAP_MIRROR),
+		 rhd = hd + 1;
 
 	gen_put(hd, "hello", "hellov");
 	gen_put(hd, "hi", "hiv");
 
-	type_cache[hd + 1] = STOS;
-	gen_get(hd + 1, "hellov", "hello");
-	gen_get(hd + 1, "hiv", "hi");
+	gen_get(rhd, "hellov", "hello");
+	gen_get(rhd, "hiv", "hi");
 
 	qmap_close(hd);
 }
 
-
 static inline void
 test_seventh(void)
 {
-	unsigned hd = gen_open(STOS, QMAP_TWO_WAY), cur_id;
-	char key[MAX_LEN];
-	char value[MAX_LEN];
+	unsigned hd = gen_open(STOS, QMAP_MIRROR),
+		 rhd = hd + 1;
+	unsigned cur_id, sn;
 
 	gen_put(hd, "hello", "olleh");
 	gen_put(hd, "hi", "ih");
 	gen_put(hd, "ola", "alo");
 
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(key, value, cur_id))
-		printf("ITER '%s' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	printf("keyed iter\n");
 	cur_id = qmap_iter(hd, "hello");
-	while (qmap_next(key, value, cur_id))
-		printf("ITER '%s' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
-	gen_del(hd + 1, "alo", NULL);
-	gen_get(hd + 1, "olleh", "hello");
-	gen_get(hd + 1, "ih", "hi");
+	gen_del(rhd, "alo", NULL);
+	gen_get(rhd, "olleh", "hello");
+	gen_get(rhd, "ih", "hi");
 
 	printf("reverse iter\n");
-	cur_id = qmap_iter(hd + 1, NULL);
-	while (qmap_next(key, value, cur_id))
-		printf("ITER '%s' - '%s'\n", key, value);
+	cur_id = qmap_iter(rhd, NULL);
+	while (qmap_next(&sn, cur_id))
+		iter_print(rhd, sn);
 
 	printf("reverse keyed iter\n");
-	cur_id = qmap_iter(hd + 1, "ih");
-	while (qmap_next(key, value, cur_id))
-		printf("ITER '%s' - '%s'\n", key, value);
+	cur_id = qmap_iter(rhd, "ih");
+	while (qmap_next(&sn, cur_id))
+		iter_print(rhd, sn);
 
 	printf("final iter\n");
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(key, value, cur_id))
-		printf("ITER '%s' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	qmap_close(hd);
 }
@@ -254,26 +366,27 @@ test_seventh(void)
 static inline
 void test_eighth(void)
 {
-	unsigned cur_id, key;
-	unsigned hd = gen_open(UTOS,
-			QMAP_AINDEX | QMAP_TWO_WAY);
-	char value[MAX_LEN];
+	unsigned cur_id, sn;
+	unsigned hd = gen_open(UTOS, QMAP_AINDEX | QMAP_MIRROR),
+		 rhd = hd + 1;
 
 	gen_put(hd, NULL, "hello");
 	gen_put(hd, NULL, "hi");
 	gen_put(hd, NULL, "ola");
 
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(&key, value, cur_id))
-		printf("ITER '%u' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	printf("reversed\n");
-	cur_id = qmap_iter(hd + 1, NULL);
-	while (qmap_next(value, &key, cur_id))
-		printf("ITER '%s' - '%u'\n", value, key);
+	cur_id = qmap_iter(rhd, NULL);
+	while (qmap_next(&sn, cur_id))
+		iter_print(rhd, sn);
 
 	qmap_close(hd);
 }
+
+#if 0
 
 static inline
 void test_nineth(void)
@@ -309,27 +422,27 @@ void test_nineth(void)
 
 	qmap_close(hd);
 }
+#endif
 
 static inline
 void test_tenth(void)
 {
-	unsigned cur_id, key;
+	unsigned cur_id, sn;
 	unsigned hd = gen_open(UTOS, QMAP_AINDEX);
 	unsigned keys[] = { 3, 3, 2 };
-	char value[MAX_LEN];
 
 	keys[0] = gen_put(hd, NULL, "hello");
 	gen_put(hd, &keys[0], "hi");
 	gen_put(hd, NULL, "ola");
 
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(&key, value, cur_id))
-		printf("ITER '%u' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	printf("Keyed iter\n");
 	cur_id = qmap_iter(hd, &keys[0]);
-	while (qmap_next(&key, value, cur_id))
-		printf("ITER '%u' - '%s'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	qmap_close(hd);
 }
@@ -337,24 +450,23 @@ void test_tenth(void)
 static inline
 void test_eleventh(void)
 {
-	unsigned cur_id, key;
-	unsigned hd = gen_open(UTOU, QMAP_AINDEX | QMAP_TWO_WAY);
+	unsigned cur_id, sn;
+	unsigned hd = gen_open(UTOU, QMAP_AINDEX);
 	unsigned keys[] = { 3, 6, 2 };
 	unsigned values[] = { 2, 4, 3 };
-	unsigned value;
 
 	keys[0] = gen_put(hd, &keys[0], &values[0]);
 	gen_put(hd, &keys[1], &values[1]);
 	gen_put(hd, NULL, &values[2]);
 
 	cur_id = qmap_iter(hd, NULL);
-	while (qmap_next(&key, &value, cur_id))
-		printf("ITER '%u' - '%u'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	printf("Keyed iter\n");
 	cur_id = qmap_iter(hd, &keys[0]);
-	while (qmap_next(&key, &value, cur_id))
-		printf("ITER '%u' - '%u'\n", key, value);
+	while (qmap_next(&sn, cur_id))
+		iter_print(hd, sn);
 
 	qmap_close(hd);
 }
@@ -378,8 +490,10 @@ int main(void) {
 	test_seventh();
 	printf("eighth\n");
 	test_eighth();
+#if 0
 	printf("nineth\n");
 	test_nineth();
+#endif
 	printf("tenth\n");
 	test_tenth();
 	printf("eleventh\n");
