@@ -17,16 +17,16 @@
 
 /* MACROS, STRUCTS, ENUMS AND GLOBALS {{{ */
 
-#define QMAP_SEED 13
-#define QMAP_DEFAULT_MASK 0xFF
-#define TYPES_MASK 0xFF
+#define QM_SEED 13
+#define QM_DEFAULT_MASK 0xFF
+#define QM_MAX 1024
 
 #define DEBUG_LVL 1
 
 #define DEBUG(lvl, ...) \
 	if (DEBUG_LVL > lvl) WARN(__VA_ARGS__)
 
-static_assert(QMAP_MISS == UINT_MAX, "assume UINT_MAX");
+static_assert(QM_MISS == UINT_MAX, "assume UINT_MAX");
 
 typedef unsigned qmap_hash_t(const void * const key);
 
@@ -51,15 +51,13 @@ typedef struct {
 } qmap_cur_t;
 
 enum qmap_if {
-	QMAP_CLOSING = 4,
+	QM_CLOSING = 4,
 };
 
-unsigned flag_reset = QMAP_CLOSING;
-qmap_t qmaps[QMAP_MAX];
-qmap_cur_t qmap_cursors[QMAP_MAX];
+unsigned flag_reset = QM_CLOSING;
+qmap_t qmaps[QM_MAX];
+qmap_cur_t qmap_cursors[QM_MAX];
 idm_t idm, cursor_idm;
-size_t type_lens[TYPES_MASK];
-unsigned types_n = 0;
 
 /* }}} */
 
@@ -70,7 +68,7 @@ unsigned types_n = 0;
 static unsigned
 qmap_hash(const void * const key)
 {
-	return XXH32(&key, sizeof(void *), QMAP_SEED);
+	return XXH32(&key, sizeof(void *), QM_SEED);
 }
 
 static unsigned
@@ -81,13 +79,12 @@ qmap_nohash(const void * const key)
 	return u;
 }
 
-int
+static void
 qmap_rassoc(const void **skey,
 		const void * const pkey UNUSED,
 		const void * const value)
 {
 	*skey = value;
-	return 0;
 }
 
 /* }}} */
@@ -110,32 +107,21 @@ qmap_id(unsigned hd, const void * const key)
 
 /* OPEN / INITIALIZATION {{{ */
 
-unsigned /* API */
-qmap_reg(size_t len) {
-	CBUG(types_n >= TYPES_MASK, "too many types\n");
-	unsigned n = types_n++;
-	type_lens[n] = len;
-	return n;
-}
-
-/* This is used by qmap_open to open databases. */
-unsigned
-qmap_sopen(unsigned type, unsigned mask, unsigned flags)
+/* Low level way of opening databases. */
+static unsigned
+_qmap_open(unsigned type, unsigned mask, unsigned flags)
 {
 	unsigned hd = idm_new(&idm);
 	qmap_t *qmap = &qmaps[hd];
 	unsigned len;
 	size_t ids_len;
 
-
-	CBUG(type >= types_n, "invalid type\n");
-
-	qmap->hash = qmap_hash;
-	if (type_lens[type] <= sizeof(unsigned)
-			&& type_lens[type])
+	if (type & QM_HNDL)
 		qmap->hash = qmap_nohash;
+	else
+		qmap->hash = qmap_hash;
 
-	mask = mask ? mask : QMAP_DEFAULT_MASK;
+	mask = mask ? mask : QM_DEFAULT_MASK;
 
 	DEBUG(1, "%u %u 0x%x %u\n",
 			hd, type,
@@ -163,14 +149,26 @@ qmap_sopen(unsigned type, unsigned mask, unsigned flags)
 	return hd;
 }
 
+unsigned /* API */
+qmap_open(unsigned key_type, unsigned value_type,
+		unsigned mask, unsigned flags)
+{
+	unsigned hd = _qmap_open(key_type, mask, flags);
+
+	if (!(flags & QM_MIRROR))
+		return hd;
+
+       	_qmap_open(value_type, mask, flags);
+	qmap_assoc(hd + 1, hd, NULL);
+
+	return hd;
+}
+
 void /* API */
 qmap_init(void)
 {
 	idm = idm_init();
 	cursor_idm = idm_init();
-
-	qmap_reg(0);
-	qmap_reg(sizeof(unsigned));
 }
 
 /* }}} */
@@ -182,8 +180,8 @@ static inline unsigned
 qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
 	qmap_t *qmap = &qmaps[hd];
 
-	if (pn == QMAP_MISS) {
-		if (!(qmaps[qmap->phd].flags & QMAP_AINDEX))
+	if (pn == QM_MISS) {
+		if (!(qmaps[qmap->phd].flags & QM_AINDEX))
 			return idm_new(&qmap->idm);
 
 		pn = id;
@@ -227,7 +225,7 @@ qmap_put(unsigned hd, const void * const key,
 	unsigned ahd, n;
 	idsi_t *cur;
 
-	n = _qmap_put(hd, key, QMAP_MISS);
+	n = _qmap_put(hd, key, QM_MISS);
 
 	cur = ids_iter(&qmaps[hd].linked);
 	while (ids_next(&ahd, &cur)) {
@@ -253,7 +251,7 @@ qmap_get(unsigned hd, const void * const key)
 	unsigned cur_id = qmap_iter(hd, key), sn;
 
 	if (!qmap_next(&sn, cur_id))
-		return QMAP_MISS;
+		return QM_MISS;
 
 	qmap_fin(cur_id);
 	return sn;
@@ -280,9 +278,9 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
     if (n >= qmap->m)
 	    return;
 
-    if (id != QMAP_MISS) {
-        qmap->map[id] = QMAP_MISS;
-        qmap->omap[n] = QMAP_MISS;
+    if (id != QM_MISS) {
+        qmap->map[id] = QM_MISS;
+        qmap->omap[n] = QM_MISS;
         idm_del(&qmap->idm, n);
     }
 
@@ -292,9 +290,19 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
         qmap_ndel_topdown(ahd, n);
 }
 
-void /* API */
+/* Delete based on position */
+static inline void
 qmap_ndel(unsigned hd, unsigned n) {
     qmap_ndel_topdown(qmap_root(hd), n);
+}
+
+void /* API */
+qmap_del(unsigned hd, const void * const key)
+{
+	unsigned cur = qmap_iter(hd, key), sn;
+
+	while (qmap_next(&sn, cur))
+		qmap_ndel(hd, sn);
 }
 
 /* }}} */
@@ -353,7 +361,7 @@ cagain:
 		goto end;
 
 	id = qmap->omap[n];
-	if (id == QMAP_MISS) {
+	if (id == QM_MISS) {
 		cursor->pos++;
 		goto cagain;
 	}
@@ -366,7 +374,7 @@ cagain:
 	return 1;
 end:
 	idm_del(&cursor_idm, cur_id);
-	*sn = QMAP_MISS;
+	*sn = QM_MISS;
 	return 0;
 }
 
@@ -390,7 +398,7 @@ qmap_close(unsigned hd)
 	idsi_t *cur;
 	unsigned ahd;
 
-	if (qmap->flags & QMAP_CLOSING)
+	if (qmap->flags & QM_CLOSING)
 		return;
 
 	cur = ids_iter(&qmap->linked);
