@@ -9,110 +9,162 @@
 #define QMAP_MISS ((unsigned) -1)
 
 enum qmap_flags {
+	// AINDEX means you'll get increasing
+	// numbers when you put with NULL key
 	QMAP_AINDEX = 1,
+
+	// This means you'll get a mirror map
+	// which you can use to do reverse lookup
 	QMAP_MIRROR = 2,
 };
 
-// this is used for associations. In case you want
-// to know what maps it refers to inside the callback
-// and what is the operation type being performed
-enum qmap_op {
-	QMAP_PUT = 0,
-	QMAP_DEL = 1,
-};
-
+// built-in types
 enum qmap_tbi {
-	QMAP_DYNA = 0,
-	QMAP_WORD = 1,
+	// Use value as if it were a handle.
+	QMAP_HNDL = 1,
+
+	// Hash the pointer!
+	QMAP_HASH = 0,
 };
-
-typedef size_t qmap_measure_t(const void * const value);
-
-/* Association callbacks follow this format */
-typedef int qmap_assoc_t(
-		const void **skey,
-		const void * const pkey,
-		const void * const value);
 
 /* Initialize the system */
 void qmap_init(void);
 
-unsigned qmap_sopen(unsigned type,
+/* Open a database
+ *
+ * @param ktype
+ * 	This is the key type. Either:
+ * 	QMAP_NOHASH (0) or QMAP_HASH (1).
+ *
+ * @param vtype
+ * 	Likewise, but for value. However it's only
+ * 	used in	MIRROR mode,
+ *
+ * @param mask
+ * 	Must be 2^n - 1. Mask + 1 should be
+ * 	your table size.
+ *
+ * @param flags
+ * 	Might be 0, QMAP_AINDEX or QMAP_MIRROR,
+ * 	or a bitwise or of those.
+ *
+ * @returns
+ * 	The map's handle for later reference.
+ */
+unsigned qmap_open(unsigned ktype, unsigned vtype,
 		unsigned mask, unsigned flags);
 
-/* Associate a qmap (hd) with a primary qmap (link), using
- * "cb" to generate secondary keys. Effectively, it makes
- * hd a secondary database.
+/* Close a qmap
+ *
+ * @param hd	The handle
+ */
+void qmap_close(unsigned hd);
+
+/* Get a table position from a key
+ *
+ * @param hd	The handle.
+ * @param key	The key.
+ *
+ * @returns	The position.
+ */
+unsigned qmap_get(unsigned hd, const void * const key);
+
+/* Put a pair into the table.
+ *
+ * @param hd
+ * 	The handle
+ *
+ * @param key
+ * 	The key you want to put. Might be NULL
+ * 	if the qmap was open with the AINDEX flag.
+ *
+ * @param value
+ * 	The value is only needed for associations,
+ * 	in case you want to use it to generate
+ * 	secondary keys. You can also use NULL.
+ *
+ * @returns
+ * 	The position your value should be stored at.
+ */
+unsigned qmap_put(unsigned hd,
+		const void * const key,
+		const void * const value);
+
+/* Delete an item key key.
+ *
+ * @param hd	The handle.
+ * @param key	The key to delete.
+ */
+void qmap_del(unsigned hd, const void * const key);
+
+/* Drop all of them contents.
+ *
+ * @param hd
+ * 	The handle.
+ */
+void qmap_drop(unsigned hd);
+
+/* Association callback type
+ *
+ * @param skey
+ * 	You want to set this to some pointer
+ * 	that will then represent the secondary key.
+ * 	
+ * @param pkey
+ * 	Is the key of the primary table.
+ *
+ * @param value
+ * 	Is the value of the primary table.
+ */
+typedef void qmap_assoc_t(
+		const void **skey,
+		const void * const pkey,
+		const void * const value);
+
+/* Make an association between two tables
+ *
+ * @param hd
+ * 	Is the handle of the secondary one.
+ *
+ * @param link
+ * 	Is the handle of the primary one.
+ *
+ * @param cb
+ * 	Is used to know how the secondary keys should
+ * 	be generated. If you provide NULL, we'll set
+ * 	skey to the value pointer.
  */
 void qmap_assoc(unsigned hd,
 		unsigned link, qmap_assoc_t cb);
 
-static inline unsigned
-qmap_open(unsigned key_type, unsigned value_type,
-		unsigned mask, unsigned flags)
-{
-	unsigned hd = qmap_sopen(key_type, mask, flags);
-
-	if (!(flags & QMAP_MIRROR))
-		return hd;
-
-       	/* qmap_sopen(value_type, mask, flags & ~QMAP_AINDEX); */
-       	qmap_sopen(value_type, mask, flags);
-	qmap_assoc(hd + 1, hd, NULL);
-
-	return hd;
-}
-
-/* Close a qmap */
-void qmap_close(unsigned hd);
-
-/* Get a value from a key */
-unsigned qmap_get(unsigned hd, const void * const key);
-
-/* Put a value and a key, or maybe just a value, if
- * you have AINDEX on. (use NULL as the key for that)
- */
-unsigned qmap_put(unsigned hd,
-		const void * const key,
-		const void * const value // for assoc
-		);
-
-
-/* drop an entire qmap's contents */
-void qmap_drop(unsigned hd);
-
-/* Start iterating over a qmap. Key might be NULL or a
- * pointer to some key you want to search.
- * Returns a cursor handle.
+/* Start iteration.
+ *
+ * @param key
+ * 	Might be NULL or a key.
+ *
+ * @returns
+ * 	A cursor handle.
  */
 unsigned qmap_iter(unsigned hd, const void * const key);
 
-/* Move the cursor to the next item. It returns one if there
- * is something there, or zero if there isn't. Use it in a
- * while loop, for example.
+/* Do iteration.
+ *
+ * @param n
+ * 	The position to the item on the table will
+ * 	be stored here.
+ *
+ * @param cur_id
+ * 	The cursor handle.
+ *
+ * @returns
+ * 	Was there an item there?
  */
-int qmap_next(unsigned *sid, unsigned cur_id);
+int qmap_next(unsigned *n, unsigned cur_id);
 
-/* When finishing iteration early, use this to clean up. */
+/* Exist iteration early.
+ *	This only makes sure that cursor handles.
+ *	Don't keep increasing. Nothing special.
+ */
 void qmap_fin(unsigned cur_id);
-
-/* Delete the Nth element. */
-void qmap_ndel(unsigned cur_id, unsigned n);
-
-/* Delete an item. */
-static inline void
-qmap_del(unsigned hd, const void * const key)
-{
-	unsigned cur = qmap_iter(hd, key), sn;
-
-	while (qmap_next(&sn, cur))
-		qmap_ndel(hd, sn);
-}
-
-/* Register a type (might have fixed-len or not) */
-unsigned qmap_reg(size_t len);
-
-/* Get the flags of a qmap */
-unsigned qmap_flags(unsigned hd);
 
 #endif

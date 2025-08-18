@@ -23,10 +23,10 @@ enum dbtype {
 };
 
 dbtype_t dbtypes[] = {
-	{ QMAP_WORD, QMAP_DYNA },
-	{ QMAP_DYNA, QMAP_WORD },
-	{ QMAP_WORD, QMAP_WORD },
-	{ QMAP_DYNA, QMAP_DYNA },
+	{ QMAP_HNDL, QMAP_HASH },
+	{ QMAP_HASH, QMAP_HNDL },
+	{ QMAP_HNDL, QMAP_HNDL },
+	{ QMAP_HASH, QMAP_HASH },
 };
 
 typedef int print_t(void *key);

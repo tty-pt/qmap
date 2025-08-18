@@ -58,8 +58,6 @@ unsigned flag_reset = QMAP_CLOSING;
 qmap_t qmaps[QMAP_MAX];
 qmap_cur_t qmap_cursors[QMAP_MAX];
 idm_t idm, cursor_idm;
-size_t type_lens[TYPES_MASK];
-unsigned types_n = 0;
 
 /* }}} */
 
@@ -81,13 +79,12 @@ qmap_nohash(const void * const key)
 	return u;
 }
 
-int
+static void
 qmap_rassoc(const void **skey,
 		const void * const pkey UNUSED,
 		const void * const value)
 {
 	*skey = value;
-	return 0;
 }
 
 /* }}} */
@@ -110,30 +107,19 @@ qmap_id(unsigned hd, const void * const key)
 
 /* OPEN / INITIALIZATION {{{ */
 
-unsigned /* API */
-qmap_reg(size_t len) {
-	CBUG(types_n >= TYPES_MASK, "too many types\n");
-	unsigned n = types_n++;
-	type_lens[n] = len;
-	return n;
-}
-
-/* This is used by qmap_open to open databases. */
-unsigned
-qmap_sopen(unsigned type, unsigned mask, unsigned flags)
+/* Low level way of opening databases. */
+static unsigned
+_qmap_open(unsigned type, unsigned mask, unsigned flags)
 {
 	unsigned hd = idm_new(&idm);
 	qmap_t *qmap = &qmaps[hd];
 	unsigned len;
 	size_t ids_len;
 
-
-	CBUG(type >= types_n, "invalid type\n");
-
-	qmap->hash = qmap_hash;
-	if (type_lens[type] <= sizeof(unsigned)
-			&& type_lens[type])
+	if (type & QMAP_HNDL)
 		qmap->hash = qmap_nohash;
+	else
+		qmap->hash = qmap_hash;
 
 	mask = mask ? mask : QMAP_DEFAULT_MASK;
 
@@ -163,14 +149,26 @@ qmap_sopen(unsigned type, unsigned mask, unsigned flags)
 	return hd;
 }
 
+unsigned /* API */
+qmap_open(unsigned key_type, unsigned value_type,
+		unsigned mask, unsigned flags)
+{
+	unsigned hd = _qmap_open(key_type, mask, flags);
+
+	if (!(flags & QMAP_MIRROR))
+		return hd;
+
+       	_qmap_open(value_type, mask, flags);
+	qmap_assoc(hd + 1, hd, NULL);
+
+	return hd;
+}
+
 void /* API */
 qmap_init(void)
 {
 	idm = idm_init();
 	cursor_idm = idm_init();
-
-	qmap_reg(0);
-	qmap_reg(sizeof(unsigned));
 }
 
 /* }}} */
@@ -292,9 +290,19 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
         qmap_ndel_topdown(ahd, n);
 }
 
-void /* API */
+/* Delete based on position */
+static inline void
 qmap_ndel(unsigned hd, unsigned n) {
     qmap_ndel_topdown(qmap_root(hd), n);
+}
+
+void /* API */
+qmap_del(unsigned hd, const void * const key)
+{
+	unsigned cur = qmap_iter(hd, key), sn;
+
+	while (qmap_next(&sn, cur))
+		qmap_ndel(hd, sn);
 }
 
 /* }}} */
