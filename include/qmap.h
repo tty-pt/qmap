@@ -106,7 +106,7 @@ qmap_del(unsigned hd, const void * const key)
 	unsigned cur = qmap_iter(hd, key), sn;
 
 	while (qmap_next(&sn, cur))
-		qmap_ndel(cur, sn);
+		qmap_ndel(hd, sn);
 }
 
 /* Register a type (might have fixed-len or not) */

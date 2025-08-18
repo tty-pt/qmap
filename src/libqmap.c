@@ -32,8 +32,8 @@ typedef unsigned qmap_hash_t(const void * const key);
 
 typedef struct {
 	// these have to do with keys
-	unsigned *map,  // id -> n
-		 *omap; // n -> id
+	unsigned *map;  // id -> n
+	unsigned *omap; // n -> id
 
 	unsigned type;
 	unsigned m, mask, flags;
@@ -137,7 +137,7 @@ qmap_sopen(unsigned type, unsigned mask, unsigned flags)
 
 	mask = mask ? mask : QMAP_DEFAULT_MASK;
 
-	DEBUG(0, "%u %u 0x%x %u\n",
+	DEBUG(1, "%u %u 0x%x %u\n",
 			hd, type,
 			mask, flags);
 
@@ -189,7 +189,7 @@ qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
 		pn = id;
 	}
 
-	if (qmap->omap[pn] != id)
+	if (qmap->idm.last < pn + 1)
 		idm_push(&qmap->idm, pn);
 
 	return pn;

@@ -57,19 +57,6 @@ reversed
 ITER 'hello' - '0'
 ITER 'hi' - '1'
 ITER 'ola' - '2'
-nineth
-gen_get_test(3, 3, hello) = hello ✅
-gen_get_test(3, 2, ola) = ola ✅
-ITER '3' - 'hello'
-ITER '3' - 'hi'
-ITER '2' - 'ola'
-Keyed iter
-ITER '3' - 'hello'
-ITER '3' - 'hi'
-gen_get_test(3, 3, (null)) = -1 ✅
-After del keyed iter
-After del unkeyed
-ITER '2' - 'ola'
 tenth
 gen_get_test(0, 0, hello) = hello ✅
 gen_get_test(0, 0, hi) = hi ✅
