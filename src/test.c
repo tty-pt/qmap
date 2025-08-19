@@ -5,7 +5,7 @@
 
 #include <qsys.h>
 
-#define DB_MASK 0xF
+#define DB_MASK 0x3
 #define MAX_LEN (BUFSIZ * 2)
 
 char *good = "✅";
@@ -456,7 +456,7 @@ void test_eleventh(void)
 	unsigned values[] = { 2, 4, 3 };
 
 	keys[0] = gen_put(hd, &keys[0], &values[0]);
-	gen_put(hd, &keys[1], &values[1]);
+	gen_put(hd, &keys[0], &values[1]);
 	gen_put(hd, NULL, &values[2]);
 
 	cur_id = qmap_iter(hd, NULL);

@@ -32,8 +32,8 @@ typedef unsigned qmap_hash_t(const void * const key);
 
 typedef struct {
 	// these have to do with keys
-	unsigned *map;  // id -> n
-	unsigned *omap; // n -> id
+	unsigned *map;  	// id -> n
+	const void **omap;	// n -> key
 
 	unsigned type;
 	unsigned m, mask, flags;
@@ -68,7 +68,7 @@ idm_t idm, cursor_idm;
 static unsigned
 qmap_hash(const void * const key)
 {
-	return XXH32(&key, sizeof(void *), QM_SEED);
+	return XXH32(key, sizeof(void *), QM_SEED);
 }
 
 static unsigned
@@ -100,6 +100,21 @@ qmap_id(unsigned hd, const void * const key)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned id = qmap->hash(key) & qmap->mask;
+	unsigned n;
+
+	if (qmap->type & QM_HNDL)
+		return id;
+
+	while (1) {
+		n = qmap->map[id];
+		if (n == QM_MISS)
+			break;
+		if (qmap->omap[n] == key)
+			break;
+		id ++;
+		id &= qmap->mask;
+	}
+
 	return id;
 }
 
@@ -133,7 +148,7 @@ _qmap_open(unsigned type, unsigned mask, unsigned flags)
 	ids_len = len * sizeof(unsigned);
 
 	qmap->map = malloc(ids_len);
-	qmap->omap = malloc(ids_len);
+	qmap->omap = malloc(len * sizeof(void *));
 	CBUG(!(qmap->map && qmap->omap), "malloc error\n");
 	qmap->m = len;
 	qmap->type = type;
@@ -144,7 +159,8 @@ _qmap_open(unsigned type, unsigned mask, unsigned flags)
 	qmap->linked = ids_init();
 
 	memset(qmap->map, 0xFF, ids_len);
-	memset(qmap->omap, 0xFF, ids_len);
+	for (unsigned i = 0; i < len; i++)
+		qmap->omap[i] = NULL;
 
 	return hd;
 }
@@ -180,12 +196,8 @@ static inline unsigned
 qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
 	qmap_t *qmap = &qmaps[hd];
 
-	if (pn == QM_MISS) {
-		if (!(qmaps[qmap->phd].flags & QM_AINDEX))
-			return idm_new(&qmap->idm);
-
+	if (pn == QM_MISS)
 		pn = id;
-	}
 
 	if (qmap->idm.last < pn + 1)
 		idm_push(&qmap->idm, pn);
@@ -197,7 +209,7 @@ qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
  * both value and key, and gets an 'n' and an 'id' to insert
  */
 static inline unsigned
-_qmap_put(unsigned hd, const void * const key, unsigned pn)
+_qmap_put(unsigned hd, const void * key, unsigned pn)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n;
@@ -211,9 +223,13 @@ _qmap_put(unsigned hd, const void * const key, unsigned pn)
 		id = n;
 	}
 
-	CBUG(n >= qmap->m, "Capacity reached\n");
+	if (qmap->flags & QM_AINDEX)
+		key = &qmap->map[id];
 
-	qmap->omap[n] = id;
+	CBUG(n >= qmap->m, "Capacity reached\n");
+	DEBUG(2, "%u %u %u %p\n", hd, n, id, key);
+
+	qmap->omap[n] = key;
 	qmap->map[id] = n;
 	return n;
 }
@@ -272,7 +288,7 @@ qmap_root(unsigned hd)
 
 static void qmap_ndel_topdown(unsigned hd, unsigned n){
     qmap_t *qmap = &qmaps[hd];
-    unsigned id = qmap->omap[n], ahd;
+    unsigned id = qmap_id(hd, qmap->omap[n]), ahd;
     idsi_t *cur;
 
     if (n >= qmap->m)
@@ -280,7 +296,7 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
 
     if (id != QM_MISS) {
         qmap->map[id] = QM_MISS;
-        qmap->omap[n] = QM_MISS;
+        qmap->omap[n] = NULL;
         idm_del(&qmap->idm, n);
     }
 
@@ -329,10 +345,15 @@ qmap_iter(unsigned hd, const void * const key)
 	unsigned id;
 
 	if (key) {
+		unsigned n;
+
 		id = qmap_id(hd, key);
-		cursor->pos = id >= qmap->m
-			? qmap->m
-			: qmap->map[id];
+
+		CBUG(id >= qmap->m, "Strange. Id hash "
+				"does not fit\n");
+
+		n = qmap->map[id];
+		cursor->pos = n;
 	} else {
 		cursor->pos = 0;
 	}
@@ -350,7 +371,8 @@ qmap_next(unsigned *sn, unsigned cur_id)
 	register qmap_cur_t *cursor
 		= &qmap_cursors[cur_id];
 	register qmap_t *qmap = &qmaps[cursor->hd];
-	unsigned n, id;
+	unsigned n;
+	const void *key;
 cagain:
 	n = cursor->pos;
 
@@ -360,14 +382,14 @@ cagain:
 	if (n >= qmap->idm.last)
 		goto end;
 
-	id = qmap->omap[n];
-	if (id == QM_MISS) {
+	key = qmap->omap[n];
+	if (key == NULL) {
 		cursor->pos++;
 		goto cagain;
 	}
 
-	DEBUG(3, "NEXT! cur_id %u id %u\n",
-			cur_id, id);
+	DEBUG(3, "NEXT! cur_id %u key %p\n",
+			cur_id, key);
 
 	cursor->pos++;
 	*sn = n;
@@ -428,12 +450,6 @@ qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
 
 	qmap->assoc = cb;
 	qmap->phd = link;
-}
-
-unsigned /* API */
-qmap_flags(unsigned hd)
-{
-	return qmaps[hd].flags;
 }
 
 /* }}} */

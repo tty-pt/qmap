@@ -8,8 +8,8 @@ gen_get_test(0, hi, 7) = 7 ✅
 third
 gen_get_test(0, 3, 5) = 5 ✅
 gen_get_test(0, 9, 7) = 7 ✅
-ITER '3' - '5'
 ITER '9' - '7'
+ITER '3' - '5'
 fourth
 gen_get_test(0, 3, hello) = hello ✅
 gen_get_test(0, 9, hi) = hi ✅
@@ -30,9 +30,9 @@ seventh
 gen_get_test(0, hello, olleh) = olleh ✅
 gen_get_test(0, hi, ih) = ih ✅
 gen_get_test(0, ola, alo) = alo ✅
+ITER 'ola' - 'alo'
 ITER 'hello' - 'olleh'
 ITER 'hi' - 'ih'
-ITER 'ola' - 'alo'
 keyed iter
 ITER 'hello' - 'olleh'
 gen_get_test(1, alo, (null)) = -1 ✅
@@ -67,10 +67,9 @@ Keyed iter
 ITER '0' - 'hi'
 eleventh
 gen_get_test(0, 3, 2) = 2 ✅
-gen_get_test(0, 6, 4) = 4 ✅
-gen_get_test(0, 5, 3) = 3 ✅
-ITER '3' - '2'
-ITER '5' - '3'
-ITER '6' - '4'
+gen_get_test(0, 3, 4) = 4 ✅
+gen_get_test(0, 2, 3) = 3 ✅
+ITER '2' - '3'
+ITER '3' - '4'
 Keyed iter
-ITER '3' - '2'
+ITER '3' - '4'
