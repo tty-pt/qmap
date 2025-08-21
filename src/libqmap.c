@@ -28,8 +28,6 @@
 
 static_assert(QM_MISS == UINT_MAX, "assume UINT_MAX");
 
-typedef unsigned qmap_hash_t(const void * const key);
-
 typedef struct {
 	// these have to do with keys
 	unsigned *map;  	// id -> n
@@ -38,6 +36,7 @@ typedef struct {
 	unsigned type;
 	unsigned m, mask, flags;
 	qmap_hash_t *hash;
+	qmap_cmp_t *cmp;
 	idm_t idm;
 	ids_t linked;
 
@@ -63,8 +62,6 @@ idm_t idm, cursor_idm;
 
 /* BUILT-INS {{{ */
 
-/* HASH FUNCTIONS */
-
 static unsigned
 qmap_hash(const void * const key)
 {
@@ -77,6 +74,21 @@ qmap_nohash(const void * const key)
 	unsigned u;
 	memcpy(&u, key, sizeof(u));
 	return u;
+}
+
+unsigned
+qmap_shash(const void *data) {
+	return XXH32(data, strlen((char *) data) + 1, QM_SEED);
+}
+
+int
+qmap_scmp(const void * const a, const void * const b) {
+	return strcmp((char *) b, (char *) a);
+}
+
+static int
+qmap_cmp(const void * const a, const void * const b) {
+	return b != a;
 }
 
 static void
@@ -109,7 +121,7 @@ qmap_id(unsigned hd, const void * const key)
 		n = qmap->map[id];
 		if (n == QM_MISS)
 			break;
-		if (qmap->omap[n] == key)
+		if (!qmap->cmp(qmap->omap[n], key))
 			break;
 		id ++;
 		id &= qmap->mask;
@@ -131,10 +143,20 @@ _qmap_open(unsigned type, unsigned mask, unsigned flags)
 	unsigned len;
 	size_t ids_len;
 
-	if (type & QM_HNDL)
-		qmap->hash = qmap_nohash;
-	else
-		qmap->hash = qmap_hash;
+	switch (type) {
+		case QM_STR:
+			qmap->hash = qmap_shash;
+			qmap->cmp = qmap_scmp;
+			break;
+		case QM_HNDL:
+			qmap->hash = qmap_nohash;
+			qmap->cmp = qmap_cmp;
+			break;
+		case QM_HASH:
+			qmap->hash = qmap_hash;
+			qmap->cmp = qmap_cmp;
+			break;
+	}
 
 	mask = mask ? mask : QM_DEFAULT_MASK;
 
@@ -353,6 +375,7 @@ qmap_iter(unsigned hd, const void * const key)
 				"does not fit\n");
 
 		n = qmap->map[id];
+		DEBUG(2, "%u %u %u %p\n", hd, n, id, key);
 		cursor->pos = n;
 	} else {
 		cursor->pos = 0;
@@ -450,6 +473,23 @@ qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
 
 	qmap->assoc = cb;
 	qmap->phd = link;
+}
+
+const void * /* API */
+qmap_key(unsigned hd, unsigned id)
+{
+	qmap_t *qmap = &qmaps[hd];
+	return qmap->omap[id];
+}
+
+void /* API */
+qmap_custom(unsigned hd,
+		qmap_hash_t *hash,
+		qmap_cmp_t *cmp)
+{
+	qmap_t *qmap = &qmaps[hd];
+	qmap->hash = hash;
+	qmap->cmp = cmp;
 }
 
 /* }}} */

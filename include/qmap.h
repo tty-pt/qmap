@@ -22,6 +22,9 @@ enum qmap_tbi {
 
 	// Use the value as an opaque handle (no hashing)
 	QM_HNDL = 1,
+
+	// String contents hash and compare
+	QM_STR = 2,
 };
 
 /* Initialize the system */
@@ -162,5 +165,58 @@ int qmap_next(unsigned *n, unsigned cur_id);
  * 	Cursor handle.
  */
 void qmap_fin(unsigned cur_id);
+
+/* Return the key that corresponds to a certain id
+ *
+ * @param hd
+ * 	Map handle.
+ *
+ * @param id
+ * 	The item's id.
+ *
+ * @returns The item's registered key pointer.
+ */
+const void *qmap_key(unsigned hd, unsigned id);
+
+/* Hash callback type
+ *
+ * @param key
+ * 	The key to hash.
+ * 	
+ * @returns
+ * 	An unsigned number hash of the key.
+ */
+typedef unsigned qmap_hash_t(const void * const key);
+
+/* Compare callback type
+ *
+ * @param a
+ * 	The first argument of the comparison.
+ *
+ * @param b
+ * 	The second argument of the comparison.
+ * 	
+ * @returns
+ * 	Zero if there is no difference.
+ * 	Not zero if there is one.
+ */
+typedef int qmap_cmp_t(const void * const a,
+		const void * const b);
+
+/* Customize a map's hash and compare function.
+ *	This can be useful if you're interested in
+ *	the contents instead of the pointers.
+ *
+ * @param hd
+ * 	The handle of the map to customize.
+ *
+ * @param hash
+ * 	A hash function to use for keys.
+ *
+ * @param cmp
+ * 	A compare function to check key equality.
+ */
+void qmap_custom(unsigned hd, qmap_hash_t *hash,
+		qmap_cmp_t *cmp);
 
 #endif
