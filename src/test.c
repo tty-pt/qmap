@@ -115,29 +115,22 @@ type_cmp(unsigned hd, unsigned mbr, void *a, void *b)
 	return type_meta[type].cmp(a, b);
 }
 
-static
-unsigned _gen_open(enum dbtype type, unsigned flags) {
-	unsigned hd;
+unsigned gen_open(enum dbtype type, unsigned flags) {
+	dbtype_t *dbtype = &dbtypes[type];
 
-	if (flags & QM_REVERSE) {
-		hd = 1;
-	} else {
-		dbtype_t *dbtype = &dbtypes[type];
-		hd = qmap_open((*dbtype)[QM_KEY],
+	unsigned hd = qmap_open((*dbtype)[QM_KEY],
 				(*dbtype)[QM_VALUE],
 				DB_MASK, flags);
-	}
 
 	hd_meta[hd].type = type;
 	hd_meta[hd].flags = flags;
 
-	return hd;
-}
+	if (flags & QM_MIRROR) {
+		unsigned rhd = hd + 1;
+		hd_meta[rhd].type = type;
+		hd_meta[rhd].flags = flags | QM_REVERSE;
+	}
 
-unsigned gen_open(enum dbtype type, unsigned flags) {
-	unsigned hd = _gen_open(type, flags);
-	if (flags & QM_MIRROR)
-		_gen_open(type, flags | QM_REVERSE);
 	return hd;
 }
 

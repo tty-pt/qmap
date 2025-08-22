@@ -151,7 +151,7 @@ unsigned qmap_iter(unsigned hd, const void * const key);
  * 	be stored here.
  *
  * @param cur_id
- * 	The cursor handle.
+ *There's a QM_STR "key type" to facilitate  	The cursor handle.
  *
  * @returns
  * 	1 if an item was produced; 0 if no more items.
@@ -176,47 +176,43 @@ void qmap_fin(unsigned cur_id);
  *
  * @returns The item's registered key pointer.
  */
-const void *qmap_key(unsigned hd, unsigned id);
+void *qmap_key(unsigned hd, unsigned id);
 
-/* Hash callback type
+/* Measure callback type, to measure a key that
+ * is of variable or dynamic size.
  *
- * @param key
- * 	The key to hash.
- * 	
+ * @param data
+ * 	The pointer to the key you want to measure.
+ *
  * @returns
- * 	An unsigned number hash of the key.
- */
-typedef unsigned qmap_hash_t(const void * const key);
-
-/* Compare callback type
- *
- * @param a
- * 	The first argument of the comparison.
- *
- * @param b
- * 	The second argument of the comparison.
+ * 	The size of the contents.
  * 	
- * @returns
- * 	Zero if there is no difference.
- * 	Not zero if there is one.
+ * Semantics: Keys that are not of fixed size need a
+ * way to be measured, in case we are not using just
+ * the pointers for comparison and hashing.
  */
-typedef int qmap_cmp_t(const void * const a,
-		const void * const b);
+typedef size_t qmap_measure_t(const void *data);
 
-/* Customize a map's hash and compare function.
- *	This can be useful if you're interested in
- *	the contents instead of the pointers.
+/* Register a type of fixed length for hashing and
+ * comparing contents.
  *
- * @param hd
- * 	The handle of the map to customize.
+ * @param len
+ * 	The length of the type.
  *
- * @param hash
- * 	A hash function to use for keys.
- *
- * @param cmp
- * 	A compare function to check key equality.
+ * @returns
+ * 	The type's id.
  */
-void qmap_custom(unsigned hd, qmap_hash_t *hash,
-		qmap_cmp_t *cmp);
+unsigned qmap_reg(size_t len);
+
+/* Register a type of variable length for hashing
+ * and comparing contents.
+ *
+ * @param measure
+ * 	The callback used to determine the size.
+ *
+ * @returns
+ * 	The type's id.
+ */
+unsigned qmap_mreg(qmap_measure_t *measure);
 
 #endif
