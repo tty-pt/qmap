@@ -13,12 +13,16 @@ enum qmap_flags {
 
 	// QM_MIRROR: create reverse-lookup (secondary) map
 	QM_MIRROR = 2,
+
+	// QM_PGET: default to obtaining primary keys
+	// instead of values.
+	QM_PGET = 4,
 };
 
 // built-in types
 enum qmap_tbi {
-	// Hash the pointer address (NOT the content)
-	QM_HASH = 0,
+	// A pointer, which gets hashed
+	QM_PTR = 0,
 
 	// Use the value as an opaque handle (no hashing)
 	QM_HNDL = 1,
@@ -33,10 +37,10 @@ void qmap_init(void);
 /* Open a database
  *
  * @param ktype
- * 	Key type: QM_HASH (0) or QM_HNDL (1).
+ * 	A built-in or registered type for keys.
  *
  * @param vtype
- * 	Same for values. Only used in QM_MIRROR mode.
+ * 	A built-in or registered type for values.
  *
  * @param mask
  * 	Must be 2^n - 1. (mask + 1) is the table size.
@@ -61,9 +65,9 @@ void qmap_close(unsigned hd);
  * @param hd	The handle.
  * @param key	The key.
  *
- * @returns	Position n, or QM_MISS if not found.
+ * @returns	A pointer to the value or NULL if not found.
  */
-unsigned qmap_get(unsigned hd, const void * const key);
+const void *qmap_get(unsigned hd, const void * const key);
 
 /* Put a pair into the table.
  *
@@ -146,17 +150,20 @@ unsigned qmap_iter(unsigned hd, const void * const key);
 
 /* Do iteration.
  *
- * @param n
- * 	The position to the item on the table will
- * 	be stored here.
+ * @param key
+ * 	The address of a pointer to return the key to the user.
+ *
+ * @param value
+ * 	The address of a pointer to return the value to the user.
  *
  * @param cur_id
- *There's a QM_STR "key type" to facilitate  	The cursor handle.
+ *	The cursor handle.
  *
  * @returns
  * 	1 if an item was produced; 0 if no more items.
  */
-int qmap_next(unsigned *n, unsigned cur_id);
+int qmap_next(const void **key, const void **value,
+		unsigned cur_id);
 
 /* Exit iteration early (optional).
  * Prevents cursor handle growth; otherwise no side effects.
@@ -165,18 +172,6 @@ int qmap_next(unsigned *n, unsigned cur_id);
  * 	Cursor handle.
  */
 void qmap_fin(unsigned cur_id);
-
-/* Return the key that corresponds to a certain id
- *
- * @param hd
- * 	Map handle.
- *
- * @param id
- * 	The item's id.
- *
- * @returns The item's registered key pointer.
- */
-void *qmap_key(unsigned hd, unsigned id);
 
 /* Measure callback type, to measure a key that
  * is of variable or dynamic size.
@@ -214,5 +209,18 @@ unsigned qmap_reg(size_t len);
  * 	The type's id.
  */
 unsigned qmap_mreg(qmap_measure_t *measure);
+
+/* Return the length of a certain element in memory.
+ *
+ * @param type_id
+ * 	The type of element.
+ *
+ * @param data
+ * 	The element's data.
+ *
+ * @returns
+ * 	The length of it.
+ */
+size_t qmap_len(unsigned type_id, const void *data);
 
 #endif

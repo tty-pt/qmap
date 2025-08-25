@@ -1,43 +1,43 @@
 first
-gen_get_test(0, 3, hello) = hello ✅
-gen_get_test(0, 5, hi) = hi ✅
-gen_get_test(0, 3, hello) = -1 ✅
+gen_get_test(1, 3, hello) = hello ✅
+gen_get_test(1, 5, hi) = hi ✅
+gen_get_test(1, 3, hello) = -1 ✅
 second
-gen_get_test(0, hello, 9) = 9 ✅
-gen_get_test(0, hi, 7) = 7 ✅
+gen_get_test(1, hello, 9) = 9 ✅
+gen_get_test(1, hi, 7) = 7 ✅
 third
-gen_get_test(0, 3, 5) = 5 ✅
-gen_get_test(0, 9, 7) = 7 ✅
+gen_get_test(1, 3, 5) = 5 ✅
+gen_get_test(1, 9, 7) = 7 ✅
 ITER '9' - '7'
 ITER '3' - '5'
 fourth
-gen_get_test(0, 3, hello) = hello ✅
-gen_get_test(0, 9, hi) = hi ✅
-gen_get_test(1, hello, 3) = 3 ✅
-gen_get_test(1, hi, 9) = 9 ✅
-fifth
-gen_get_test(0, hello, 3) = 3 ✅
-gen_get_test(0, hi, 9) = 9 ✅
-fifth two-way
 gen_get_test(1, 3, hello) = hello ✅
 gen_get_test(1, 9, hi) = hi ✅
+gen_get_test(2, hello, 3) = 3 ✅
+gen_get_test(2, hi, 9) = 9 ✅
+fifth
+gen_get_test(1, hello, 3) = 3 ✅
+gen_get_test(1, hi, 9) = 9 ✅
+fifth two-way
+gen_get_test(2, 3, hello) = hello ✅
+gen_get_test(2, 9, hi) = hi ✅
 sixth
-gen_get_test(0, hello, hellov) = hellov ✅
-gen_get_test(0, hi, hiv) = hiv ✅
-gen_get_test(1, hellov, hello) = hello ✅
-gen_get_test(1, hiv, hi) = hi ✅
+gen_get_test(1, hello, hellov) = hellov ✅
+gen_get_test(1, hi, hiv) = hiv ✅
+gen_get_test(2, hellov, hello) = hello ✅
+gen_get_test(2, hiv, hi) = hi ✅
 seventh
-gen_get_test(0, hello, olleh) = olleh ✅
-gen_get_test(0, hi, ih) = ih ✅
-gen_get_test(0, ola, alo) = alo ✅
-ITER 'ola' - 'alo'
+gen_get_test(1, hello, olleh) = olleh ✅
+gen_get_test(1, hi, ih) = ih ✅
+gen_get_test(1, ola, alo) = alo ✅
 ITER 'hello' - 'olleh'
 ITER 'hi' - 'ih'
+ITER 'ola' - 'alo'
 keyed iter
 ITER 'hello' - 'olleh'
-gen_get_test(1, alo, (null)) = -1 ✅
-gen_get_test(1, olleh, hello) = hello ✅
-gen_get_test(1, ih, hi) = hi ✅
+gen_get_test(2, alo, (null)) = -1 ✅
+gen_get_test(2, olleh, hello) = hello ✅
+gen_get_test(2, ih, hi) = hi ✅
 reverse iter
 ITER 'olleh' - 'hello'
 ITER 'ih' - 'hi'
@@ -47,9 +47,9 @@ final iter
 ITER 'hello' - 'olleh'
 ITER 'hi' - 'ih'
 eighth
-gen_get_test(0, 0, hello) = hello ✅
-gen_get_test(0, 1, hi) = hi ✅
-gen_get_test(0, 2, ola) = ola ✅
+gen_get_test(1, 0, hello) = hello ✅
+gen_get_test(1, 1, hi) = hi ✅
+gen_get_test(1, 2, ola) = ola ✅
 ITER '0' - 'hello'
 ITER '1' - 'hi'
 ITER '2' - 'ola'
@@ -58,17 +58,17 @@ ITER 'hello' - '0'
 ITER 'hi' - '1'
 ITER 'ola' - '2'
 tenth
-gen_get_test(0, 0, hello) = hello ✅
-gen_get_test(0, 0, hi) = hi ✅
-gen_get_test(0, 1, ola) = ola ✅
+gen_get_test(1, 0, hello) = hello ✅
+gen_get_test(1, 0, hi) = hi ✅
+gen_get_test(1, 1, ola) = ola ✅
 ITER '0' - 'hi'
 ITER '1' - 'ola'
 Keyed iter
 ITER '0' - 'hi'
 eleventh
-gen_get_test(0, 3, 2) = 2 ✅
-gen_get_test(0, 3, 4) = 4 ✅
-gen_get_test(0, 2, 3) = 3 ✅
+gen_get_test(1, 3, 2) = 2 ✅
+gen_get_test(1, 3, 4) = 4 ✅
+gen_get_test(1, 2, 3) = 3 ✅
 ITER '2' - '3'
 ITER '3' - '4'
 Keyed iter
