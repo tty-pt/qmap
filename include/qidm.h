@@ -61,7 +61,7 @@ unsigned ids_pop(ids_t *list) {
 
 static inline
 void ids_drop(ids_t *list) {
-	while (!ids_pop(list));
+	while (ids_pop(list) != IDM_MISS);
 }
 
 static inline
@@ -95,29 +95,10 @@ idm_t idm_init(void) {
 }
 
 static inline
-int idm_del(idm_t *idm, unsigned id) {
-	if (idm->last <= id)
-		return 1;
-	else if (id + 1 == idm->last) {
-		idm->last--;
-		return 1;
-	} else {
-		ids_push(&idm->free, id);
-		return 0;
-	}
+void idm_drop(idm_t *idm) {
+	ids_drop(&idm->free);
 }
 
-static inline
-unsigned idm_new(idm_t *idm) {
-	unsigned ret = ids_pop(&idm->free);
-
-	if (ret == IDM_MISS)
-		return idm->last++;
-
-	return ret;
-}
-
-#if 1
 static inline
 unsigned idm_push(idm_t *idm, unsigned n) {
 	unsigned i;
@@ -133,7 +114,29 @@ unsigned idm_push(idm_t *idm, unsigned n) {
 	idm->last = n + 1;
 	return n;
 }
-#endif
+
+static inline
+int idm_del(idm_t *idm, unsigned id) {
+	if (id + 1 < idm->last) {
+		idm_push(idm, id);
+		return 0;
+	} else if (idm->last < id + 1)
+		return 1;
+	else {
+		idm->last--;
+		return 1;
+	}
+}
+
+static inline
+unsigned idm_new(idm_t *idm) {
+	unsigned ret = ids_pop(&idm->free);
+
+	if (ret == IDM_MISS)
+		return idm->last++;
+
+	return ret;
+}
 
 #if 0
 #include <stdio.h>

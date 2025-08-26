@@ -75,17 +75,12 @@ typedef struct {
 	qmap_cmp_t *cmp;
 } qmap_type_t;
 
-enum qmap_if {
-	QM_CLOSING = 8,
-};
-
-static unsigned flag_reset = QM_CLOSING;
 static qmap_t qmaps[QM_MAX];
 static qmap_cur_t qmap_cursors[QM_MAX];
 static idm_t idm, cursor_idm;
 
 static qmap_type_t qmap_types[TYPES_MASK + 1];
-static unsigned types_hd;
+static unsigned types_n = 0;
 
 /* }}} */
 
@@ -135,12 +130,13 @@ qmap_key(unsigned hd, unsigned n)
 /* Easily obtain the pointer to the value */
 static inline void *
 qmap_val(unsigned hd, unsigned n) {
-	qmap_t *qmap = &qmaps[hd];
+	qmap_t *qmap = &qmaps[hd], *pqmap;
 
 	if (qmap->flags & QM_PGET)
 		return qmap_key(qmap->phd, n);
 
-	return * VAL_ADDR(qmap, n);
+	pqmap = &qmaps[qmap->phd];
+	return * VAL_ADDR(pqmap, n);
 }
 
 /* In some cases we want to calculate the id based on the
@@ -158,6 +154,7 @@ qmap_id(unsigned hd, const void * const key)
 	unsigned id = type->hash(key, len)
 		& qmap->mask;
 	unsigned n;
+	const void *okey;
 
 	if (qmap->types[QM_KEY] == QM_HNDL)
 		return id;
@@ -166,7 +163,11 @@ qmap_id(unsigned hd, const void * const key)
 		n = qmap->map[id];
 		if (n == QM_MISS)
 			break;
-		if (!type->cmp(qmap_key(hd, n), key, len))
+		okey = qmap_key(hd, n);
+		// FIXME NO CLUE WHY THIS IS NEEDED
+		if (okey == NULL)
+			break;
+		if (!type->cmp(okey, key, len))
 			break;
 		id ++;
 		id &= qmap->mask;
@@ -207,7 +208,7 @@ _qmap_open(unsigned ktype, unsigned vtype,
 	qmap->types[QM_KEY] = ktype;
 	qmap->types[QM_VALUE] = vtype;
 	qmap->mask = mask;
-	qmap->flags = flags & ~flag_reset;
+	qmap->flags = flags;
 	qmap->idm = idm_init();
 	qmap->phd = hd;
 	qmap->linked = ids_init();
@@ -218,8 +219,7 @@ _qmap_open(unsigned ktype, unsigned vtype,
 	// }}}
 
 	memset(qmap->map, 0xFF, ids_len);
-	for (unsigned i = 0; i < len; i++)
-		qmap->omap[i] = NULL;
+	memset(qmap->omap, 0, sizeof(void *) * len);
 
 	return hd;
 }
@@ -246,15 +246,20 @@ s_measure(const void *key)
 	return strlen(key) + 1;
 }
 
+static void qmap_on_exit() {
+	for (unsigned i = 0; i < idm.last; i++)
+		qmap_close(i);
+
+	idm_drop(&cursor_idm);
+	idm_drop(&idm);
+}
+
 void /* API */
 qmap_init(void)
 {
 	qmap_type_t *type;
 	idm = idm_init();
 	cursor_idm = idm_init();
-
-	types_hd = qmap_open(QM_HNDL, QM_PTR,
-			TYPES_MASK, QM_AINDEX);
 
 	// QM_PTR
 	type = &qmap_types[qmap_reg(sizeof(void *))];
@@ -265,78 +270,73 @@ qmap_init(void)
 
 	// QM_STR
 	qmap_mreg(s_measure);
+
+	atexit(qmap_on_exit);
 }
 
 /* }}} */
 
 /* PUT {{{ */
 
-/* calculate the n of a keyed put */
-static inline unsigned
-qmap_keyed_n(unsigned hd, unsigned id, unsigned pn) {
-	qmap_t *qmap = &qmaps[hd];
-
-	if (pn == QM_MISS)
-		pn = id;
-
-	if (qmap->idm.last < pn + 1)
-		idm_push(&qmap->idm, pn);
-
-	return pn;
-}
-
-/* This is similar to qmap_mPUT except that it already puts
- * both value and key, and gets an 'n' and an 'id' to insert
+/* This is the low-level put. It doesn't aim to provide
+ * MIRROR functionality in itself, just putting in whatever
+ * kind of map.
  */
 static inline unsigned
-_qmap_put(unsigned hd, unsigned *idr, const void * key,
-		const void *value, unsigned pn)
+_qmap_put(unsigned hd, const void * key,
+		const void *value)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n;
 	unsigned id;
 	const void *aval = value;
 	void *rval, *rkey;
+	size_t klen;
 
 	if (key) {
+		unsigned old_n;
+
 		id = qmap_id(hd, key);
-		n = qmap_keyed_n(hd, id, pn);
+		old_n = qmap->map[id];
+
+		n = old_n == QM_MISS
+			? idm_new(&qmap->idm)
+			: old_n;
 	} else {
-		n = idm_new(&qmap->idm);
-		id = n;
+		id = n = idm_new(&qmap->idm);
 		key = &id;
 	}
 
-	qmap->map[id] = n;
-
-	rkey = (void *) key;
-
 	CBUG(n >= qmap->m, "Capacity reached\n");
 	DEBUG(2, "%u %u %u %p\n", hd, n, id, key);
+	rkey = (void *) key;
 
-	// STORE {{{
-	size_t klen;
+	if (qmap->phd == hd) {
+		if (qmap->types[QM_VALUE] == QM_PTR)
+			value = &value;
 
-	if (qmap->types[QM_VALUE] == QM_PTR)
-		value = &value;
+		if (qmap->map[id] == n) {
+			const void *ekey = qmap_key(hd, n);
+			const void *eval = qmap_val(hd, n);
 
-	if (!(qmap->flags & QM_PGET)) {
+			free((void *) ekey);
+			free((void *) eval);
+		}
+
 		klen = qmap_len(qmap->types[QM_VALUE], aval);
 		rval = malloc(klen);
 		* VAL_ADDR(qmap, n) = rval;
 		memcpy(rval, value, klen);
+
+		klen = qmap_len(qmap->types[QM_KEY], key);
+		rkey = malloc(klen);
+		memcpy(rkey, key, klen);
 	}
 
-	// store key
-	klen = qmap_len(qmap->types[QM_KEY], key);
-	rkey = malloc(klen);
-	memcpy(rkey, key, klen);
-	// }}}
-
+	qmap->map[id] = n;
 	qmap->omap[n] = rkey;
-	*idr = id;
 
-	return n;
+	return id;
 }
 
 unsigned /* API */
@@ -347,7 +347,8 @@ qmap_put(unsigned hd, const void * const key,
 	idsi_t *cur;
 	const void *rkey, *rval;
 
-	n = _qmap_put(hd, &id, key, value, QM_MISS);
+	id = _qmap_put(hd, key, value);
+	n = qmaps[hd].map[id];
 
 	cur = ids_iter(&qmaps[hd].linked);
 	rkey = qmap_key(hd, n);
@@ -356,15 +357,14 @@ qmap_put(unsigned hd, const void * const key,
 	while (ids_next(&ahd, &cur)) {
 		qmap_t *aqmap;
 		const void *skey;
-		unsigned ign;
 
 		aqmap = &qmaps[ahd];
 		aqmap->assoc(&skey, rkey, rval);
 
-		_qmap_put(ahd, &ign, skey, rval, n);
+		_qmap_put(ahd, skey, rval);
 	}
 
-	return n;
+	return id;
 }
 
 /* }}} */
@@ -401,26 +401,33 @@ qmap_root(unsigned hd)
 
 static void qmap_ndel_topdown(unsigned hd, unsigned n){
 	qmap_t *qmap = &qmaps[hd];
-	const void *key = qmap_key(hd, n), *value;
-	unsigned id = qmap_id(hd, key), ahd;
+	const void *key, *value;
+	unsigned id, ahd;
 	idsi_t *cur;
 
 	if (n >= qmap->m)
 		return;
 
-	if (id != QM_MISS) {
+	key = qmap_key(hd, n);
+	if (!key)
+		return;
+
+	if (qmap->phd == hd) {
 		value = qmap_val(hd, n);
 		free((void *) key);
 		free((void *) value);
-		qmap->map[id] = QM_MISS;
-		qmap->omap[n] = NULL;
-		idm_del(&qmap->idm, n);
 	}
+
+	id = qmap_id(hd, key);
+	qmap->map[id] = QM_MISS;
+	qmap->omap[n] = NULL;
+	idm_del(&qmap->idm, n);
 
 	cur = ids_iter(&qmap->linked);
 
 	while (ids_next(&ahd, &cur))
 		qmap_ndel_topdown(ahd, n);
+
 }
 
 /* Delete based on position */
@@ -556,7 +563,7 @@ qmap_close(unsigned hd)
 	idsi_t *cur;
 	unsigned ahd;
 
-	if (qmap->flags & QM_CLOSING)
+	if (!qmap->omap)
 		return;
 
 	cur = ids_iter(&qmap->linked);
@@ -564,14 +571,14 @@ qmap_close(unsigned hd)
 		qmap_close(ahd);
 
 	qmap_drop(hd);
-
 	ids_drop(&qmap->linked);
-	ids_drop(&qmap->idm.free);
+	idm_drop(&qmap->idm);
 	qmap->idm.last = 0;
-	qmap->flags &= ~flag_reset;
 	free(qmap->map);
 	free(qmap->omap);
-	free(qmap->table);
+	if (qmap->phd == hd)
+		free(qmap->table);
+	qmap->omap = NULL;
 	idm_del(&idm, hd);
 }
 
@@ -587,12 +594,13 @@ qmap_assoc(unsigned hd, unsigned link, qmap_assoc_t cb)
 
 	qmap->assoc = cb;
 	qmap->phd = link;
+	free(qmap->table);
 }
 
 unsigned /* API */
 qmap_reg(size_t len)
 {
-	unsigned id = qmap_put(types_hd, NULL, NULL);
+	unsigned id = types_n ++;
 	qmap_type_t *type = &qmap_types[id];
 
 	memset(type, 0, sizeof(qmap_type_t));
@@ -605,7 +613,7 @@ qmap_reg(size_t len)
 unsigned /* API */
 qmap_mreg(qmap_measure_t *measure)
 {
-	unsigned id = qmap_put(types_hd, NULL, NULL);
+	unsigned id = types_n ++;
 	qmap_type_t *type = &qmap_types[id];
 
 	memset(type, 0, sizeof(qmap_type_t));
