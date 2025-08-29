@@ -246,6 +246,7 @@ s_measure(const void *key)
 	return strlen(key) + 1;
 }
 
+__attribute__((destructor))
 static void qmap_on_exit() {
 	for (unsigned i = 0; i < idm.last; i++)
 		qmap_close(i);
@@ -254,7 +255,8 @@ static void qmap_on_exit() {
 	idm_drop(&idm);
 }
 
-void /* API */
+__attribute__((constructor))
+static void
 qmap_init(void)
 {
 	qmap_type_t *type;
@@ -270,8 +272,6 @@ qmap_init(void)
 
 	// QM_STR
 	qmap_mreg(s_measure);
-
-	atexit(qmap_on_exit);
 }
 
 /* }}} */

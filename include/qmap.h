@@ -31,9 +31,6 @@ enum qmap_tbi {
 	QM_STR = 2,
 };
 
-/* Initialize the system */
-void qmap_init(void);
-
 /* Open a database
  *
  * @param ktype

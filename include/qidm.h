@@ -117,14 +117,14 @@ unsigned idm_push(idm_t *idm, unsigned n) {
 
 static inline
 int idm_del(idm_t *idm, unsigned id) {
-	if (id + 1 < idm->last) {
-		idm_push(idm, id);
-		return 0;
-	} else if (idm->last < id + 1)
+	if (idm->last <= id)
 		return 1;
-	else {
+	else if (id + 1 == idm->last) {
 		idm->last--;
 		return 1;
+	} else {
+		ids_push(&idm->free, id);
+		return 0;
 	}
 }
 

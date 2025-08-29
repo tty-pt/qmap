@@ -447,8 +447,6 @@ void test_eleventh(void)
 }
 
 int main(void) {
-	qmap_init();
-
 	printf("first\n");
 	test_first();
 	printf("second\n");
