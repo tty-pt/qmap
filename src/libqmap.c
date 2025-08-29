@@ -284,7 +284,7 @@ qmap_init(void)
  */
 static inline unsigned
 _qmap_put(unsigned hd, const void * key,
-		const void *value)
+		const void *value, unsigned pn)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned n;
@@ -299,9 +299,12 @@ _qmap_put(unsigned hd, const void * key,
 		id = qmap_id(hd, key);
 		old_n = qmap->map[id];
 
-		n = old_n == QM_MISS
-			? idm_new(&qmap->idm)
-			: old_n;
+		if (old_n == QM_MISS) {
+			n = idm_new(&qmap->idm);
+			if (pn != QM_MISS)
+				n = pn;
+		} else
+			n = old_n;
 	} else {
 		id = n = idm_new(&qmap->idm);
 		key = &id;
@@ -309,7 +312,7 @@ _qmap_put(unsigned hd, const void * key,
 
 	CBUG(n >= qmap->m, "Capacity reached\n");
 	DEBUG(2, "%u %u %u %p\n", hd, n, id, key);
-	rkey = (void *) key;
+	rkey = key ? (void *) key : &qmap->map[id];
 
 	if (qmap->phd == hd) {
 		if (qmap->types[QM_VALUE] == QM_PTR)
@@ -328,6 +331,8 @@ _qmap_put(unsigned hd, const void * key,
 		* VAL_ADDR(qmap, n) = rval;
 		memcpy(rval, value, klen);
 
+		// this could be avoided
+		// if the key is the same
 		klen = qmap_len(qmap->types[QM_KEY], key);
 		rkey = malloc(klen);
 		memcpy(rkey, key, klen);
@@ -347,7 +352,7 @@ qmap_put(unsigned hd, const void * const key,
 	idsi_t *cur;
 	const void *rkey, *rval;
 
-	id = _qmap_put(hd, key, value);
+	id = _qmap_put(hd, key, value, QM_MISS);
 	n = qmaps[hd].map[id];
 
 	cur = ids_iter(&qmaps[hd].linked);
@@ -361,7 +366,7 @@ qmap_put(unsigned hd, const void * const key,
 		aqmap = &qmaps[ahd];
 		aqmap->assoc(&skey, rkey, rval);
 
-		_qmap_put(ahd, skey, rval);
+		_qmap_put(ahd, skey, rval, n);
 	}
 
 	return id;
@@ -409,8 +414,6 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
 		return;
 
 	key = qmap_key(hd, n);
-	if (!key)
-		return;
 
 	if (qmap->phd == hd) {
 		value = qmap_val(hd, n);
@@ -570,8 +573,9 @@ qmap_close(unsigned hd)
 	while (ids_next(&ahd, &cur))
 		qmap_close(ahd);
 
-	qmap_drop(hd);
 	ids_drop(&qmap->linked);
+
+	qmap_drop(hd);
 	idm_drop(&qmap->idm);
 	qmap->idm.last = 0;
 	free(qmap->map);
