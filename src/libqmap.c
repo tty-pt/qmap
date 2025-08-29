@@ -247,7 +247,7 @@ s_measure(const void *key)
 }
 
 __attribute__((destructor))
-static void qmap_on_exit() {
+static void qmap_destruct(void) {
 	for (unsigned i = 0; i < idm.last; i++)
 		qmap_close(i);
 
@@ -413,7 +413,14 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
 	if (n >= qmap->m)
 		return;
 
+	cur = ids_iter(&qmap->linked);
+
+	while (ids_next(&ahd, &cur))
+		qmap_ndel_topdown(ahd, n);
+
 	key = qmap_key(hd, n);
+
+	id = qmap_id(hd, key);
 
 	if (qmap->phd == hd) {
 		value = qmap_val(hd, n);
@@ -421,15 +428,9 @@ static void qmap_ndel_topdown(unsigned hd, unsigned n){
 		free((void *) value);
 	}
 
-	id = qmap_id(hd, key);
 	qmap->map[id] = QM_MISS;
 	qmap->omap[n] = NULL;
 	idm_del(&qmap->idm, n);
-
-	cur = ids_iter(&qmap->linked);
-
-	while (ids_next(&ahd, &cur))
-		qmap_ndel_topdown(ahd, n);
 
 }
 
@@ -569,13 +570,13 @@ qmap_close(unsigned hd)
 	if (!qmap->omap)
 		return;
 
+	qmap_drop(hd);
+
 	cur = ids_iter(&qmap->linked);
 	while (ids_next(&ahd, &cur))
 		qmap_close(ahd);
 
 	ids_drop(&qmap->linked);
-
-	qmap_drop(hd);
 	idm_drop(&qmap->idm);
 	qmap->idm.last = 0;
 	free(qmap->map);
