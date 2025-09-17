@@ -55,7 +55,7 @@ typedef struct {
 } qmap_t;
 
 typedef struct {
-	unsigned hd, pos, sub_cur, ipos;
+	unsigned hd, pos, sub_cur, ipos, flags;
 	const void * key;
 } qmap_cur_t;
 
@@ -381,7 +381,7 @@ static int qmap_lnext(unsigned *sn, unsigned cur_id);
 const void * /* API */
 qmap_get(unsigned hd, const void * const key)
 {
-	unsigned cur_id = qmap_iter(hd, key), sn;
+	unsigned cur_id = qmap_iter(hd, key, 0), sn;
 
 	if (!qmap_lnext(&sn, cur_id))
 		return NULL;
@@ -443,7 +443,7 @@ qmap_ndel(unsigned hd, unsigned n) {
 void /* API */
 qmap_del(unsigned hd, const void * const key)
 {
-	unsigned cur = qmap_iter(hd, key), sn;
+	unsigned cur = qmap_iter(hd, key, 0), sn;
 
 	while (qmap_lnext(&sn, cur))
 		qmap_ndel(hd, sn);
@@ -465,14 +465,14 @@ qmap_fin(unsigned cur_id)
 }
 
 unsigned /* API */
-qmap_iter(unsigned hd, const void * const key)
+qmap_iter(unsigned hd, const void * const key, unsigned flags)
 {
 	qmap_t *qmap = &qmaps[hd];
 	unsigned cur_id = idm_new(&cursor_idm);
 	qmap_cur_t *cursor = &qmap_cursors[cur_id];
 	unsigned id;
 
-	if (key) {
+	if (key && !(flags & QM_RANGE)) {
 		unsigned n;
 
 		id = qmap_id(hd, key);
@@ -491,6 +491,7 @@ qmap_iter(unsigned hd, const void * const key)
 	cursor->sub_cur = 0;
 	cursor->hd = hd;
 	cursor->key = key;
+	cursor->flags = flags;
 	return cur_id;
 }
 
@@ -506,16 +507,28 @@ qmap_lnext(unsigned *sn, unsigned cur_id)
 cagain:
 	n = cursor->pos;
 
-	if (cursor->key && n != cursor->ipos)
-		goto end;
-
 	if (n >= qmap->idm.last)
 		goto end;
 
 	key = qmap_key(cursor->hd, n);
+
 	if (key == NULL) {
 		cursor->pos++;
 		goto cagain;
+	}
+
+	if (cursor->key && n != cursor->ipos) {
+		qmap_type_t *type
+			= &qmap_types[qmap->types[QM_KEY]];
+
+		if ((cursor->flags & QM_RANGE) &&
+				type->cmp(key, cursor->key, type->len) < 0)
+		{
+			cursor->pos++;
+			goto cagain;
+		}
+
+		goto end;
 	}
 
 	DEBUG(3, "NEXT! cur_id %u key %p\n",
@@ -554,7 +567,7 @@ qmap_next(const void ** ckey, const void ** cval,
 void /* API */
 qmap_drop(unsigned hd)
 {
-	unsigned cur_id = qmap_iter(hd, NULL), sn;
+	unsigned cur_id = qmap_iter(hd, NULL, 0), sn;
 
 	while (qmap_lnext(&sn, cur_id))
 		qmap_ndel(hd, sn);

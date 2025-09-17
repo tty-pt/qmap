@@ -31,6 +31,13 @@ enum qmap_tbi {
 	QM_STR = 2,
 };
 
+// iter flags
+enum qmap_if {
+	// Do a ranged iteration. Meaning. It will
+	// continue even if the key differs from the initial.
+	QM_RANGE = 1,
+};
+
 /* Open a database
  *
  * @param ktype
@@ -143,7 +150,7 @@ void qmap_assoc(unsigned hd,
  * @returns
  * 	A cursor handle.
  */
-unsigned qmap_iter(unsigned hd, const void * const key);
+unsigned qmap_iter(unsigned hd, const void * const key, unsigned flags);
 
 /* Do iteration.
  *

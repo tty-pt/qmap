@@ -237,7 +237,7 @@ test_third(void)
 	gen_put(hd, &keys[0], &values[0]);
 	gen_put(hd, &keys[1], &values[1]);
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
@@ -304,12 +304,12 @@ test_seventh(void)
 	gen_put(hd, "hi", "ih");
 	gen_put(hd, "ola", "alo");
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
 	printf("keyed iter\n");
-	cur_id = qmap_iter(hd, "hello");
+	cur_id = qmap_iter(hd, "hello", 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
@@ -318,17 +318,17 @@ test_seventh(void)
 	gen_get(rhd, "ih", "hi");
 
 	printf("reverse iter\n");
-	cur_id = qmap_iter(rhd, NULL);
+	cur_id = qmap_iter(rhd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(rhd, key, value);
 
 	printf("reverse keyed iter\n");
-	cur_id = qmap_iter(rhd, "ih");
+	cur_id = qmap_iter(rhd, "ih", 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(rhd, key, value);
 
 	printf("final iter\n");
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
@@ -347,12 +347,12 @@ void test_eighth(void)
 	gen_put(hd, NULL, "hi");
 	gen_put(hd, NULL, "ola");
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
 	printf("reversed\n");
-	cur_id = qmap_iter(rhd, NULL);
+	cur_id = qmap_iter(rhd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(rhd, key, value);
 
@@ -374,22 +374,22 @@ void test_nineth(void)
 	/* errors += _gen_get(hd, &keys[1], "hi", "hello", 0); */
 	gen_put(hd, &keys[2], "ola");
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 
 	printf("Keyed iter\n");
-	cur_id = qmap_iter(hd, &keys[0]);
+	cur_id = qmap_iter(hd, &keys[0], 0);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 
 	gen_del(hd, &keys[0], NULL);
 	printf("After del keyed iter\n");
-	cur_id = qmap_iter(hd, &keys[0]);
+	cur_id = qmap_iter(hd, &keys[0], 0);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 	printf("After del unkeyed\n");
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, value, cur_id))
 		printf("ITER '%u' - '%s'\n", key, value);
 
@@ -409,12 +409,12 @@ void test_tenth(void)
 	gen_put(hd, &keys[0], "hi");
 	gen_put(hd, NULL, "ola");
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
 	printf("Keyed iter\n");
-	cur_id = qmap_iter(hd, &keys[0]);
+	cur_id = qmap_iter(hd, &keys[0], 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
@@ -434,12 +434,12 @@ void test_eleventh(void)
 	gen_put(hd, &keys[0], &values[1]);
 	gen_put(hd, NULL, &values[2]);
 
-	cur_id = qmap_iter(hd, NULL);
+	cur_id = qmap_iter(hd, NULL, 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
 	printf("Keyed iter\n");
-	cur_id = qmap_iter(hd, &keys[0]);
+	cur_id = qmap_iter(hd, &keys[0], 0);
 	while (qmap_next(&key, &value, cur_id))
 		iter_print(hd, key, value);
 
