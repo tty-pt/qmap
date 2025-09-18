@@ -63,11 +63,6 @@ typedef unsigned qmap_hash_t(
 		const void * const key,
 		size_t len);
 
-typedef int qmap_cmp_t(
-		const void * const a,
-		const void * const b,
-		size_t len);
-
 typedef struct {
 	size_t len;
 	qmap_measure_t *measure;
@@ -512,23 +507,23 @@ cagain:
 
 	key = qmap_key(cursor->hd, n);
 
-	if (key == NULL) {
-		cursor->pos++;
-		goto cagain;
-	}
-
-	if (cursor->key && n != cursor->ipos) {
+	if (cursor->flags & QM_RANGE) {
 		qmap_type_t *type
 			= &qmap_types[qmap->types[QM_KEY]];
 
-		if ((cursor->flags & QM_RANGE) &&
-				type->cmp(key, cursor->key, type->len) < 0)
-		{
+		if (!key || type->cmp(key, cursor->key, type->len) < 0) {
+			cursor->pos++;
+			goto cagain;
+		}
+	} else {
+		if (key == NULL) {
 			cursor->pos++;
 			goto cagain;
 		}
 
-		goto end;
+		if (cursor->key && n != cursor->ipos) {
+			goto end;
+		}
 	}
 
 	DEBUG(3, "NEXT! cur_id %u key %p\n",
@@ -626,6 +621,13 @@ qmap_reg(size_t len)
 	type->hash = qmap_chash;
 	type->cmp = qmap_ccmp;
 	return id;
+}
+
+void
+qmap_cmp_set(unsigned ref, qmap_cmp_t *cmp)
+{
+	qmap_type_t *type = &qmap_types[ref];
+	type->cmp = cmp;
 }
 
 unsigned /* API */

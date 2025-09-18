@@ -203,6 +203,14 @@ typedef size_t qmap_measure_t(const void *data);
  */
 unsigned qmap_reg(size_t len);
 
+typedef int qmap_cmp_t(
+		const void * const a,
+		const void * const b,
+		size_t len);
+
+void
+qmap_cmp_set(unsigned ref, qmap_cmp_t *cmp);
+
 /* Register a type of variable length for hashing
  * and comparing contents.
  *
