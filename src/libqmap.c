@@ -159,9 +159,6 @@ qmap_id(unsigned hd, const void * const key)
 		if (n == QM_MISS)
 			break;
 		okey = qmap_key(hd, n);
-		// FIXME NO CLUE WHY THIS IS NEEDED
-		if (okey == NULL)
-			break;
 		if (!type->cmp(okey, key, len))
 			break;
 		id ++;
@@ -506,25 +503,23 @@ cagain:
 		goto end;
 
 	key = qmap_key(cursor->hd, n);
+	if (key == NULL) {
+		cursor->pos++;
+		goto cagain;
+	}
 
 	if (cursor->flags & QM_RANGE) {
 		qmap_type_t *type
 			= &qmap_types[qmap->types[QM_KEY]];
 
-		if (!key || type->cmp(key, cursor->key, type->len) < 0) {
+		if (cursor->key && type->cmp(key, cursor->key,
+					type->len) < 0)
+		{
 			cursor->pos++;
 			goto cagain;
 		}
-	} else {
-		if (key == NULL) {
-			cursor->pos++;
-			goto cagain;
-		}
-
-		if (cursor->key && n != cursor->ipos) {
-			goto end;
-		}
-	}
+	} else if (cursor->key && n != cursor->ipos)
+		goto end;
 
 	DEBUG(3, "NEXT! cur_id %u key %p\n",
 			cur_id, key);
